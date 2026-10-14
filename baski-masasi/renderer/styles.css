@@ -407,3 +407,13 @@ body.dragging-block .trash { display: block; }
 @media (max-width: 1200px) {
     .layout { grid-template-columns: 220px 1fr 290px; }
 }
+
+/* ---------------- PDF ---------------- */
+
+.flag.pdf { background: #fde8e4; color: #b4412c; font-weight: 600; }
+.tile-thumb { position: relative; }
+.tile-thumb img { object-fit: contain; background: #fff; }
+.pdf-count { position: absolute; left: 4px; bottom: 4px; background: #b4412c; color: #fff; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 5px; }
+.tile .pdf-count { display: inline-block; margin: 0; width: auto; }
+.range-pair { display: flex; align-items: center; gap: 6px; }
+.range-pair input { width: 70px; }

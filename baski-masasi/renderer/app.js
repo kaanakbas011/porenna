@@ -21,6 +21,7 @@
         selected: null
     };
     const images = new Map(); // id -> { id, name, url, thumb, w, h }
+    const pdfs = new Map(); // id -> { id, name, pages: [{ url, thumb, w, h }] }
 
     function emptyBlock(label) {
         return { id: uid(), kind: "empty", label: label || "", count: 1, backBlank: false };
@@ -84,16 +85,40 @@
             const im = images.get(b.imageId);
             return im ? im.name : "Görsel";
         }
+        if (b.kind === "pdf") {
+            const doc = pdfs.get(b.pdfId);
+            if (!doc) return "PDF";
+            return doc.pages.length > 1 ? `${doc.name} (s. ${b.from}–${b.to})` : doc.name;
+        }
         return "?";
     }
 
-    function blockPage(b, useThumb) {
+    /* pi: PDF bloklarında belgenin kaçıncı sayfası (0 tabanlı) */
+    function blockPage(b, useThumb, pi) {
         if (b.kind === "tpl") return { kind: "tpl", tpl: b.tpl, opts: b.opts };
         if (b.kind === "img") {
             const im = images.get(b.imageId);
             return { kind: "img", image: im ? (useThumb ? im.thumb : im.url) : null, fit: b.fit };
         }
+        if (b.kind === "pdf") {
+            const doc = pdfs.get(b.pdfId);
+            const pg = doc && doc.pages[pi != null ? pi : b.from - 1];
+            if (!pg) return { kind: "blank" };
+            return { kind: "img", image: useThumb ? pg.thumb : pg.url, fit: b.fit, rotate: b.rotate, w: pg.w, h: pg.h };
+        }
         return { kind: "blank" };
+    }
+
+    /* Bir bloğun bastığı sayfalar (pdf için belge sayfa indeksleri) */
+    function blockPageIndexes(b) {
+        const count = Math.max(1, b.count | 0);
+        const out = [];
+        if (b.kind === "pdf") {
+            for (let r = 0; r < count; r++) for (let i = b.from - 1; i < b.to; i++) out.push(i);
+        } else {
+            for (let i = 0; i < count; i++) out.push(null);
+        }
+        return out;
     }
 
     function contentFromPayload(p) {
@@ -103,11 +128,18 @@
         }
         if (p.type === "image") return { kind: "img", imageId: p.id, fit: "cover" };
         if (p.type === "slot") return { kind: "empty" };
+        if (p.type === "pdf") {
+            const doc = pdfs.get(p.id);
+            const from = p.page || 1;
+            const to = p.page || doc.pages.length;
+            return { kind: "pdf", pdfId: p.id, from, to, fit: "contain", rotate: true };
+        }
         return null;
     }
 
     function applyContent(b, content) {
         delete b.tpl; delete b.presetKey; delete b.opts; delete b.imageId; delete b.fit;
+        delete b.pdfId; delete b.from; delete b.to; delete b.rotate;
         Object.assign(b, content);
     }
 
@@ -130,10 +162,9 @@
         const ranges = new Map();
         for (const b of state.blocks) {
             const start = pages.length;
-            const count = Math.max(1, b.count | 0);
-            for (let i = 0; i < count; i++) {
+            for (const pi of blockPageIndexes(b)) {
                 if (duplex && b.backBlank && pages.length % 2 === 1) pages.push({ auto: true });
-                pages.push({ block: b });
+                pages.push({ block: b, pi });
                 if (duplex && b.backBlank) pages.push({ auto: true });
             }
             const realIdx = [];
@@ -229,19 +260,24 @@
         state.blocks.forEach((b) => {
             const sel = b.id === state.selected ? " selected" : "";
             const empty = b.kind === "empty";
-            const many = b.count > 1;
+            const nPages = blockPageIndexes(b).length;
+            const many = nPages > 1;
+            const badge = b.kind === "pdf"
+                ? `${b.to - b.from + 1} s.${b.count > 1 ? " ×" + b.count : ""}`
+                : `×${b.count}`;
             const thumb = empty
                 ? `<div class="placeholder"><span>${esc(b.label || "Boş yer")}</span><small>Şablon veya görsel sürükleyin</small></div>`
                 : sheetSvg(blockPage(b, true));
             html += `<div class="card${sel}${empty ? " empty" : ""}" draggable="true" data-id="${b.id}">
                 <div class="card-top">
                     <span class="pg">${rangeLabel(info.ranges.get(b.id))}</span>
+                    ${b.kind === "pdf" ? '<span class="flag pdf">PDF</span>' : ""}
                     ${b.backBlank ? '<span class="flag" title="Arkalı önlü baskıda arkası boş">arkası boş</span>' : ""}
                     <button class="icon-btn del" data-del="${b.id}" title="Sil">×</button>
                 </div>
                 <div class="sheet-wrap${many ? " stack" : ""}">
                     <div class="sheet">${thumb}</div>
-                    ${many ? `<span class="badge">×${b.count}</span>` : ""}
+                    ${many ? `<span class="badge">${badge}</span>` : ""}
                 </div>
                 <div class="card-name">
                     ${b.label && !empty ? `<span class="tag">${esc(b.label)}</span>` : ""}
@@ -261,11 +297,12 @@
 
     function renderLibraryImages() {
         const wrap = $("#imageTiles");
-        if (!images.size) {
-            wrap.innerHTML = "";
-            return;
-        }
-        wrap.innerHTML = [...images.values()].map((im) => `
+        wrap.innerHTML = [...pdfs.values()].map((d) => `
+            <div class="tile pdf-tile" draggable="true" data-pdf="${d.id}" title="${esc(d.name)} — ${d.pages.length} sayfa">
+                <div class="tile-thumb"><img src="${d.pages[0].thumb}" alt=""><span class="pdf-count">PDF · ${d.pages.length} s.</span></div>
+                <span>${esc(d.name)}</span>
+                <button class="icon-btn rm" data-rmpdf="${d.id}" title="Kütüphaneden kaldır">×</button>
+            </div>`).join("") + [...images.values()].map((im) => `
             <div class="tile img-tile" draggable="true" data-image="${im.id}" title="${esc(im.name)}">
                 <div class="tile-thumb"><img src="${im.thumb}" alt=""></div>
                 <span>${esc(im.name)}</span>
@@ -318,13 +355,26 @@
             <input type="text" data-prop="label" value="${esc(b.label)}" placeholder="Etiket">
         </label>`;
 
-        h += `<div class="field">Sayfa adedi
+        if (b.kind === "pdf") {
+            const doc = pdfs.get(b.pdfId);
+            const n = doc ? doc.pages.length : 1;
+            h += `<div class="field">PDF sayfa aralığı <small>(belgede ${n} sayfa var)</small>
+                <div class="range-pair">
+                    <input type="number" min="1" max="${n}" data-prop="from" value="${b.from}">
+                    <span>–</span>
+                    <input type="number" min="1" max="${n}" data-prop="to" value="${b.to}">
+                    <button class="btn small" data-act="allpages">Tümü</button>
+                </div>
+            </div>`;
+        }
+
+        h += `<div class="field">${b.kind === "pdf" ? "Kaç kez basılsın" : "Sayfa adedi"}
             <div class="stepper">
                 <button data-step="-1">−</button>
                 <input type="number" min="1" max="2000" data-prop="count" value="${b.count}">
                 <button data-step="1">+</button>
             </div>
-            <div class="chips">${[1, 10, 20, 40, 45, 50, 100].map((n) => `<button class="chip${b.count === n ? " on" : ""}" data-count="${n}">${n}</button>`).join("")}</div>
+            <div class="chips">${(b.kind === "pdf" ? [1, 2, 3, 5, 10, 20, 30] : [1, 10, 20, 40, 45, 50, 100]).map((n) => `<button class="chip${b.count === n ? " on" : ""}" data-count="${n}">${n}</button>`).join("")}</div>
         </div>`;
 
         if (b.kind === "empty") {
@@ -370,6 +420,17 @@
                     <button data-fit="stretch" class="${b.fit === "stretch" ? "on" : ""}" title="Sayfaya esnetir">Esnet</button>
                 </div>
                 <p class="note">Görseli değiştirmek için soldan başka bir görseli bu sayfanın üstüne sürükleyin.</p>`;
+        }
+
+        if (b.kind === "pdf") {
+            h += `<div class="group-title">PDF sayfa yerleşimi</div>
+                <div class="seg small">
+                    <button data-fit="contain" class="${b.fit === "contain" ? "on" : ""}" title="Sayfanın tamamı görünür (önerilen)">Sığdır</button>
+                    <button data-fit="cover" class="${b.fit === "cover" ? "on" : ""}" title="Kağıdı doldurur, taşan kenarlar kırpılır">Doldur</button>
+                    <button data-fit="stretch" class="${b.fit === "stretch" ? "on" : ""}" title="Kağıda esnetir">Esnet</button>
+                </div>
+                <label class="check"><input type="checkbox" data-prop="rotate" ${b.rotate ? "checked" : ""}> <span>Yatay/dikey uymayan sayfaları otomatik döndür</span></label>
+                ${b.to > b.from ? `<button class="btn small" data-act="split">Sayfalara böl <small>(araya sayfa eklemek için)</small></button>` : ""}`;
         }
 
         h += `<div class="group-title">Arkalı önlü</div>
@@ -473,6 +534,27 @@
         render();
     }
 
+    /* Bir PDF bloğunu her sayfası ayrı kart olacak şekilde böler */
+    function splitPdfBlock(id) {
+        const i = indexOf(id);
+        const b = state.blocks[i];
+        if (!b || b.kind !== "pdf") return;
+        commit();
+        const parts = [];
+        for (let pg = b.from; pg <= b.to; pg++) {
+            const nb = clone(b);
+            nb.id = uid();
+            nb.from = nb.to = pg;
+            nb.count = 1;
+            nb.label = pg === b.from ? b.label : "";
+            parts.push(nb);
+        }
+        state.blocks.splice(i, 1, ...parts);
+        state.selected = parts[0].id;
+        render();
+        toast(`${parts.length} ayrı sayfaya bölündü.`);
+    }
+
     function addSlot() {
         commit();
         const b = emptyBlock("Sayfa");
@@ -556,8 +638,13 @@
     async function importFiles(fileList) {
         const out = [];
         for (const f of fileList) {
+            if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+                const p = await importPdf(f);
+                if (p) out.push(p);
+                continue;
+            }
             if (!f.type || !f.type.startsWith("image/")) {
-                toast(`“${f.name}” bir görsel değil, atlandı.`, "warn");
+                toast(`“${f.name}” görsel ya da PDF değil, atlandı.`, "warn");
                 continue;
             }
             try {
@@ -577,9 +664,108 @@
                 toast(`“${f.name}” açılamadı.`, "error");
             }
         }
-        if (out.length) toast(`${out.length} görsel eklendi.`);
+        const nImg = out.filter((x) => x.type === "image").length;
+        if (nImg) toast(`${nImg} görsel eklendi.`);
         renderLibraryImages();
         return out;
+    }
+
+    /* ---- PDF içe aktarma (pdf.js, ilk kullanımda yüklenir) ---- */
+
+    let pdfjsReady = null;
+
+    function loadScript(src) {
+        return new Promise((res, rej) => {
+            const s = document.createElement("script");
+            s.src = src;
+            s.onload = res;
+            s.onerror = () => rej(new Error(src + " yüklenemedi"));
+            document.head.appendChild(s);
+        });
+    }
+
+    function loadPdfJs() {
+        if (!pdfjsReady) {
+            pdfjsReady = loadScript("vendor/pdf.min.js").then(() => {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+                return window.pdfjsLib;
+            });
+            pdfjsReady.catch(() => { pdfjsReady = null; });
+        }
+        return pdfjsReady;
+    }
+
+    function canvasToDataURL(canvas, maxSide, quality) {
+        const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
+        if (k === 1) return canvas.toDataURL("image/jpeg", quality);
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(canvas.width * k));
+        c.height = Math.max(1, Math.round(canvas.height * k));
+        const ctx = c.getContext("2d");
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(canvas, 0, 0, c.width, c.height);
+        return c.toDataURL("image/jpeg", quality);
+    }
+
+    /* PDF'in her sayfasını ~300 dpi görüntüye çevirir */
+    async function importPdf(file) {
+        const progress = toast(`“${file.name}” açılıyor…`, "info", 0);
+        try {
+            const lib = await loadPdfJs();
+            const data = new Uint8Array(await file.arrayBuffer());
+            const base = location.href.replace(/[^/]*$/, "");
+            const doc = await lib.getDocument({
+                data,
+                isEvalSupported: false,
+                cMapUrl: base + "vendor/cmaps/",
+                cMapPacked: true,
+                standardFontDataUrl: base + "vendor/standard_fonts/"
+            }).promise;
+            const pages = [];
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            for (let n = 1; n <= doc.numPages; n++) {
+                progress.querySelector("span").textContent = `“${file.name}” hazırlanıyor: ${n} / ${doc.numPages} sayfa`;
+                const page = await doc.getPage(n);
+                const v1 = page.getViewport({ scale: 1 });
+                // 300 dpi, ama uzun kenar 3600 pikseli geçmesin
+                const scale = Math.min(300 / 72, 3600 / Math.max(v1.width, v1.height));
+                const vp = page.getViewport({ scale });
+                canvas.width = Math.round(vp.width);
+                canvas.height = Math.round(vp.height);
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                await page.render({ canvasContext: ctx, viewport: vp }).promise;
+                pages.push({
+                    url: canvas.toDataURL("image/jpeg", 0.9),
+                    thumb: canvasToDataURL(canvas, 360, 0.8),
+                    w: v1.width,
+                    h: v1.height
+                });
+                page.cleanup();
+                await new Promise((r) => setTimeout(r, 0)); // arayüz donmasın
+            }
+            doc.destroy();
+            const id = uid();
+            pdfs.set(id, { id, name: file.name.replace(/\.pdf$/i, ""), pages });
+            progress.remove();
+            toast(`PDF eklendi: ${pages.length} sayfa.`, "ok");
+            return { type: "pdf", id };
+        } catch (err) {
+            progress.remove();
+            const msg = err && err.name === "PasswordException" ? "PDF şifreli, açılamadı." : `“${file.name}” açılamadı.`;
+            toast(msg, "error");
+            return null;
+        }
+    }
+
+    function removePdf(id) {
+        if (state.blocks.some((b) => b.kind === "pdf" && b.pdfId === id)) {
+            toast("Bu PDF bir sayfada kullanılıyor. Önce o sayfaları silin veya değiştirin.", "warn");
+            return;
+        }
+        pdfs.delete(id);
+        render();
     }
 
     function removeImage(id) {
@@ -630,6 +816,7 @@
             if (!t) return;
             if (t.dataset.preset) drag = { type: "preset", key: t.dataset.preset };
             else if (t.dataset.image) drag = { type: "image", id: t.dataset.image };
+            else if (t.dataset.pdf) drag = { type: "pdf", id: t.dataset.pdf };
             else if (t.dataset.slot) drag = { type: "slot" };
             else if (t.dataset.id) {
                 drag = { type: "block", id: t.dataset.id };
@@ -763,12 +950,15 @@
         $("#library").addEventListener("click", async (e) => {
             const rm = e.target.closest("[data-rmimg]");
             if (rm) { e.stopPropagation(); removeImage(rm.dataset.rmimg); return; }
+            const rmp = e.target.closest("[data-rmpdf]");
+            if (rmp) { e.stopPropagation(); removePdf(rmp.dataset.rmpdf); return; }
             if (e.target.closest("#imageDrop")) { $("#imageInput").click(); return; }
             const tile = e.target.closest(".tile");
             if (!tile) return;
             let payload = null;
             if (tile.dataset.preset) payload = { type: "preset", key: tile.dataset.preset };
             else if (tile.dataset.image) payload = { type: "image", id: tile.dataset.image };
+            else if (tile.dataset.pdf) payload = { type: "pdf", id: tile.dataset.pdf };
             else if (tile.dataset.slot) payload = { type: "slot" };
             if (!payload) return;
             const sel = state.blocks.find((b) => b.id === state.selected);
@@ -802,9 +992,15 @@
                 v = parseFloat(v);
                 if (!isFinite(v)) return;
                 if (path === "count") v = Math.max(1, Math.min(2000, Math.round(v)));
+                if (path === "from" || path === "to") {
+                    const doc = pdfs.get(b.pdfId);
+                    v = Math.max(1, Math.min(doc ? doc.pages.length : 1, Math.round(v)));
+                }
             }
             if (!props._editing) { commit(); props._editing = true; }
             setProp(b, path, v);
+            if (path === "from" && b.to < b.from) b.to = b.from;
+            if (path === "to" && b.from > b.to) b.from = b.to;
             // Metin/sayı yazarken odağı kaybetmemek için paneli değil diğer alanları yenile
             const info = analyze();
             renderTop();
@@ -828,6 +1024,8 @@
             else if (btn.dataset.fit) { commit(); b.fit = btn.dataset.fit; render(); }
             else if (btn.dataset.act === "dup") duplicateBlock(b.id);
             else if (btn.dataset.act === "delete") deleteBlock(b.id);
+            else if (btn.dataset.act === "split") splitPdfBlock(b.id);
+            else if (btn.dataset.act === "allpages") { commit(); b.from = 1; b.to = pdfs.get(b.pdfId).pages.length; render(); }
             else if (btn.dataset.act === "clear") { commit(); applyContent(b, { kind: "empty" }); render(); }
         });
 
@@ -870,7 +1068,7 @@
     function printHtml(pageList) {
         const { W, H } = pageDims();
         const body = pageList.map((p) => {
-            const page = p && p.block ? blockPage(p.block, false) : { kind: "blank" };
+            const page = p && p.block ? blockPage(p.block, false, p.pi) : { kind: "blank" };
             return `<div class="p">${pageSvg(page, W, H, `width="${W}mm" height="${H}mm"`)}</div>`;
         }).join("");
         return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Baskı</title><style>
@@ -1101,7 +1299,8 @@
             orient: state.orient,
             duplex: state.duplex,
             blocks: state.blocks,
-            images: [...images.values()].filter((im) => used.has(im.id) || images.size < 40)
+            images: [...images.values()].filter((im) => used.has(im.id) || images.size < 40),
+            pdfs: [...pdfs.values()].filter((d) => state.blocks.some((b) => b.kind === "pdf" && b.pdfId === d.id))
         });
     }
 
@@ -1130,6 +1329,8 @@
         commit();
         images.clear();
         (data.images || []).forEach((im) => images.set(im.id, im));
+        pdfs.clear();
+        (data.pdfs || []).forEach((d) => pdfs.set(d.id, d));
         state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : "A4";
         state.orient = data.orient === "landscape" ? "landscape" : "portrait";
         state.duplex = data.duplex !== false;
@@ -1183,5 +1384,5 @@
     render();
 
     // Testler ve hata ayıklama için
-    window.__bm = { state, images, analyze, printHtml, render };
+    window.__bm = { state, images, pdfs, analyze, printHtml, render };
 })();

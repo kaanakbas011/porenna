@@ -192,7 +192,12 @@ function pageSvg(page, W, H, extraAttrs) {
         inner = templateInner(page.tpl, W, H, page.opts);
     } else if (page.kind === "img" && page.image) {
         const par = page.fit === "contain" ? "xMidYMid meet" : page.fit === "stretch" ? "none" : "xMidYMid slice";
-        inner = `<image href="${page.image}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="${par}"/>`;
+        // Yatay kaynak dikey kağıda (veya tersi) gelirse 90° döndür
+        if (page.rotate && page.w && page.h && (page.w > page.h) !== (W > H)) {
+            inner = `<g transform="translate(${W} 0) rotate(90)"><image href="${page.image}" x="0" y="0" width="${H}" height="${W}" preserveAspectRatio="${par}"/></g>`;
+        } else {
+            inner = `<image href="${page.image}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="${par}"/>`;
+        }
     }
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${extraAttrs || ""}>`
         + `<rect width="${W}" height="${H}" fill="#fff"/>${inner}</svg>`;

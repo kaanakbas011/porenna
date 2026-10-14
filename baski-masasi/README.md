@@ -12,6 +12,9 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
 - **Hazır şablonlar:** Boş, Kareli 5 mm, Kareli 1 cm, Çizgili 8 mm (sol kenar çizgili), Geniş çizgili, Noktalı, Milimetrik, Güzel yazı, Nota defteri, Cornell not.
   Aralık, renk, çizgi kalınlığı, kenar boşluğu ve "Ad Soyad / Tarih" satırı ayarlanabilir. Şablonlar vektör olarak üretildiği için baskıda keskin çıkar.
 - **Görseller:** Masaüstünden görselleri sürükleyip doğrudan bir sayfanın üstüne veya sol taraftaki görsel alanına bırakın. Yerleşim seçenekleri: Doldur, Sığdır, Esnet.
+- **PDF içe aktarma:** Hazır PDF'leri (ödev, fotokopi, föy) masaüstünden sürükleyip bir sayfa yerine ya da sol alana bırakın. Her sayfa 300 dpi kalitede alınır.
+  PDF tek kart olarak durur. Sayfa aralığı (örneğin 2–5) ve kaç kez basılacağı seçilebilir. "Sayfalara böl" düğmesi her sayfayı ayrı kart yapar, böylece araya kareli/çizgili sayfa eklenebilir.
+  Yatay PDF sayfaları dikey kağıda (ya da tersi) otomatik döndürülerek yerleştirilir. Şifreli PDF'ler açılamaz.
 - **Sayfa adedi:** Bir sayfayı seçip adet girin. Örneğin kareliyi 45 sayfaya çıkarın. Kart üst üste binmiş görünür ve "×45" rozeti taşır.
 - **Araya ekleme / sıralama:** Bir kartın ortasına bırakmak içeriğini değiştirir, kenarına bırakmak araya yeni sayfa ekler. Kartları sürükleyerek sıralayabilir, çöp alanına bırakarak silebilirsiniz.
 - **Baskı planı:** Toplam sayfa ve kağıt sayısını, her yaprağın ön ve arka yüzünü gösterir. Örneğin arka kapak son kağıdın ön yüzüne düşüyorsa uyarır ve tek tıkla düzeltir.
@@ -56,3 +59,4 @@ npm run dist
 | `renderer/app.js` | Sürükle-bırak, sayfa listesi, baskı planı, yazdırma akışı |
 | `renderer/templates.js` | Kareli, çizgili vb. şablonların SVG üretimi |
 | `renderer/styles.css` | Görünüm |
+| `renderer/vendor/` | PDF okumak için [pdf.js](https://mozilla.github.io/pdf.js/) 3.11 (Apache 2.0). `npm run vendor` ile yeniden kopyalanır |

@@ -1,0 +1,30 @@
+{
+  "name": "baski-masasi",
+  "productName": "Baskı Masası",
+  "version": "1.0.0",
+  "description": "Kırtasiyeler için sürükle-bırak çıktı hazırlama: kareli/çizgili sayfalar, kapaklar, PDF ve arkalı önlü yazdırma.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.baskimasasi.app",
+    "productName": "Baskı Masası",
+    "files": ["main.js", "preload.js", "renderer/**/*"],
+    "directories": { "output": "dist" },
+    "win": { "target": ["nsis", "portable"] },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Baskı Masası"
+    }
+  }
+}

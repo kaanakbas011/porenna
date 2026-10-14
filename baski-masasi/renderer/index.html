@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'self' about: blob:">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baskı Masası</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-mark">▤</span>
+        <span>Baskı Masası</span>
+    </div>
+
+    <div class="top-group">
+        <label class="field-inline">
+            Kağıt
+            <select id="pageSize"></select>
+        </label>
+        <div class="seg" id="orient">
+            <button data-v="portrait" title="Dikey">▯ Dikey</button>
+            <button data-v="landscape" title="Yatay">▭ Yatay</button>
+        </div>
+    </div>
+
+    <div class="top-group">
+        <button class="btn ghost" id="undoBtn" title="Geri al (Ctrl+Z)">↶ Geri al</button>
+        <button class="btn ghost" id="redoBtn" title="Yinele (Ctrl+Y)">↷ Yinele</button>
+    </div>
+
+    <div class="top-group">
+        <button class="btn ghost" id="newBtn" title="Yeni boş iş">Yeni</button>
+        <button class="btn ghost" id="openBtn" title="Kayıtlı işi aç">Aç</button>
+        <button class="btn ghost" id="saveProjBtn" title="İşi daha sonra kullanmak için kaydet">İşi kaydet</button>
+    </div>
+
+    <div class="top-group right">
+        <button class="btn" id="pdfBtn">⤓ PDF kaydet</button>
+        <button class="btn primary" id="printBtn">🖶 Yazdır</button>
+    </div>
+</header>
+
+<main class="layout">
+
+    <!-- SOL: KÜTÜPHANE -->
+    <aside class="library" id="library">
+        <section>
+            <h3>Şablonlar</h3>
+            <p class="hint">Sayfa yerine sürükleyin. Tıklarsanız seçili yere uygulanır.</p>
+            <div class="tiles" id="presetTiles"></div>
+        </section>
+
+        <section>
+            <h3>Görseller <small>(kapak vb.)</small></h3>
+            <div class="dropzone" id="imageDrop" tabindex="0">
+                <strong>Görselleri buraya bırakın</strong>
+                <span>veya tıklayıp seçin</span>
+            </div>
+            <input type="file" id="imageInput" accept="image/*" multiple hidden>
+            <div class="tiles" id="imageTiles"></div>
+        </section>
+
+        <section>
+            <h3>Yer tutucu</h3>
+            <div class="tiles" id="slotTiles"></div>
+        </section>
+
+        <div class="trash" id="trash">🗑 Silmek için buraya bırakın</div>
+    </aside>
+
+    <!-- ORTA: SAYFALAR -->
+    <section class="board-wrap">
+        <div class="board-head">
+            <div>
+                <h2>Sayfalar</h2>
+                <p class="hint">Kartları sürükleyerek sıralayın. Bir kartın üstüne bırakmak içeriğini değiştirir, kenarına bırakmak araya yeni sayfa ekler.</p>
+            </div>
+            <div class="board-stats" id="boardStats"></div>
+        </div>
+        <div class="board" id="board"></div>
+    </section>
+
+    <!-- SAĞ: AYARLAR + BASKI PLANI -->
+    <aside class="side">
+        <section class="panel" id="props"></section>
+        <section class="panel" id="plan"></section>
+    </aside>
+</main>
+
+<div class="modal-back" id="modalBack" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="templates.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

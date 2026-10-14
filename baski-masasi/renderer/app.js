@@ -3,7 +3,7 @@
 ===================================================== */
 
 (() => {
-    const { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, pageSvg } = window.BM_TEMPLATES;
+    const { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, pageSvg, marginsOf } = window.BM_TEMPLATES;
     const desktop = window.desktop || null; // Electron köprüsü (tarayıcıda yok)
 
     const $ = (sel) => document.querySelector(sel);
@@ -19,6 +19,7 @@
         duplex: true,
         binding: "side",   // side | top | booklet | none
         gutter: 10,        // spiral payı (mm)
+        gutterMode: "both", // both: her sayfada iki yanda aynı (kaymaz) | mirror: sadece delik tarafında
         signature: 0,      // kitapçıkta forma başına kağıt (0 = tek forma)
         blocks: [],
         selected: null
@@ -61,7 +62,7 @@
     function snapshot() {
         return JSON.stringify({
             pageSize: state.pageSize, orient: state.orient, duplex: state.duplex,
-            binding: state.binding, gutter: state.gutter, signature: state.signature, blocks: state.blocks
+            binding: state.binding, gutter: state.gutter, gutterMode: state.gutterMode, signature: state.signature, blocks: state.blocks
         });
     }
 
@@ -272,6 +273,7 @@
     /* Spiral payı hangi kenarda: ön yüzde cilt tarafı, arka yüzde tam tersi */
     function gutterFor(i, duplex) {
         if (!isSpiral() || !(state.gutter > 0)) return null;
+        if (state.gutterMode !== "mirror") return { side: state.binding === "side" ? "left" : "top", size: state.gutter, both: true };
         const back = duplex && i % 2 === 1;
         if (state.binding === "side") return { side: back ? "right" : "left", size: state.gutter };
         return { side: back ? "bottom" : "top", size: state.gutter };
@@ -365,7 +367,8 @@
 
     function sheetSvg(page) {
         const { W, H } = pageDims();
-        return pageSvg(page, W, H, 'preserveAspectRatio="xMidYMid meet"');
+        // Kart küçük gösterildiği için ince çizgiler kaybolmasın
+        return pageSvg(page, W, H, 'preserveAspectRatio="xMidYMid meet"', null, { pxPerMm: (W > H ? 178 : 138) / W });
     }
 
     let rangeDuplex = true;
@@ -449,7 +452,7 @@
         const { W, H } = { W: 210, H: 297 };
         $("#presetTiles").innerHTML = PRESETS.map((p) => `
             <div class="tile" draggable="true" data-preset="${p.key}" title="${esc(p.name)}">
-                <div class="tile-thumb">${pageSvg({ kind: "tpl", tpl: p.tpl, opts: p.opts }, W, H)}</div>
+                <div class="tile-thumb">${pageSvg({ kind: "tpl", tpl: p.tpl, opts: p.opts }, W, H, "", null, { pxPerMm: 95 / W })}</div>
                 <span>${esc(p.name)}</span>
             </div>`).join("");
         $("#textTiles").innerHTML = `
@@ -541,10 +544,22 @@
                     `<button class="${(o.weight || "normal") === k ? "on" : ""}" data-weight="${k}">${w.label}</button>`).join("")}</div></div>`;
             }
             if (has("margin")) {
-                h += `<label class="field">Kenar boşluğu (mm)
-                    <div class="range-row"><input type="range" min="0" max="25" step="1" data-prop="opts.margin" value="${o.margin != null ? o.margin : 8}">
-                    <input type="number" min="0" max="25" step="1" data-prop="opts.margin" value="${o.margin != null ? o.margin : 8}"></div>
-                </label>`;
+                const mg = marginsOf(o);
+                h += `<div class="field">Kenar boşlukları (mm)
+                    <div class="margins">
+                        <label>Üst<input type="number" min="0" max="80" step="1" data-margin="mTop" value="${mg.T}"></label>
+                        <label>Alt<input type="number" min="0" max="80" step="1" data-margin="mBottom" value="${mg.B}"></label>
+                        <label>Sol<input type="number" min="0" max="80" step="1" data-margin="mLeft" value="${mg.L}"></label>
+                        <label>Sağ<input type="number" min="0" max="80" step="1" data-margin="mRight" value="${mg.R}"></label>
+                    </div>
+                    <div class="chips">
+                        <button class="chip" data-mall="5">Hepsi 5</button>
+                        <button class="chip" data-mall="8">Hepsi 8</button>
+                        <button class="chip" data-mall="12">Hepsi 12</button>
+                        <button class="chip" data-mbottom="20">Alttan 20</button>
+                    </div>
+                    <button class="btn small" data-act="margins-all">Bu boşlukları tüm şablon sayfalarına uygula</button>
+                </div>`;
             }
             if (has("leftLine")) {
                 h += `<label class="check"><input type="checkbox" data-prop="opts.leftLine" ${o.leftLine ? "checked" : ""}> <span>Sol kenar (kırmızı) çizgisi</span></label>`;
@@ -664,8 +679,13 @@
                 <div><b>${total}</b><span>sayfa</span></div>
                 <div><b>${sheetsCount}</b><span>yaprak kağıt</span></div>
             </div>
-            ${isSpiral() ? `<label class="field inline-num">Spiral payı <small>(delik tarafında boşluk)</small>
-                <span><input type="number" min="0" max="25" step="1" data-gutter value="${state.gutter}"> mm</span></label>` : ""}`;
+            ${isSpiral() ? `<label class="field inline-num">Spiral payı <small>(delikler için boşluk)</small>
+                <span><input type="number" min="0" max="25" step="1" data-gutter value="${state.gutter}"> mm</span></label>
+                <div class="seg wide small" title="Spiral payı nasıl bırakılsın">
+                    <button data-gmode="both" class="${state.gutterMode !== "mirror" ? "on" : ""}">Her sayfada aynı</button>
+                    <button data-gmode="mirror" class="${state.gutterMode === "mirror" ? "on" : ""}">Sadece delik tarafı</button>
+                </div>
+                <p class="hint">${state.gutterMode === "mirror" ? "Ön yüzde solda, arka yüzde sağda boşluk; içerik sayfadan sayfaya yer değiştirir." : "Her sayfa birebir aynı; boşluk iki yanda bırakılır, içerik kaymaz."}</p>` : ""}`;
 
         if (warnings.length) {
             h += `<div class="warnings">${warnings.map((w, i) => `
@@ -711,11 +731,18 @@
         render();
     }
 
+    /* Kopyalanan bir kartın yazı/logo katmanlarına yeni kimlik ver
+       (bağlantı kimliği korunur, böylece bağlantılı kopyalar birlikte güncellenir) */
+    function freshLayerIds(b) {
+        if (b.layers) b.layers = b.layers.map((l) => Object.assign({}, l, { id: uid() }));
+        return b;
+    }
+
     function duplicateBlock(id) {
         const i = indexOf(id);
         if (i < 0) return;
         commit();
-        const copy = clone(state.blocks[i]);
+        const copy = freshLayerIds(clone(state.blocks[i]));
         copy.id = uid();
         state.blocks.splice(i + 1, 0, copy);
         state.selected = copy.id;
@@ -730,7 +757,7 @@
         commit();
         const parts = [];
         for (let pg = b.from; pg <= b.to; pg++) {
-            const nb = clone(b);
+            const nb = freshLayerIds(clone(b));
             nb.id = uid();
             nb.from = nb.to = pg;
             nb.count = 1;
@@ -1118,6 +1145,8 @@
         }
     }
 
+    let lastCardClick = { id: null, t: 0 };
+
     function setupEvents() {
         // Sayfa boyutu
         $("#pageSize").innerHTML = Object.entries(PAGE_SIZES).map(([k, p]) =>
@@ -1181,18 +1210,35 @@
             const card = e.target.closest(".card");
             if (!card) { if (e.target === $("#board")) { state.selected = null; render(); } return; }
             if (card.dataset.add) { addSlot(); return; }
+            // Çift tıklama: ilk tıklama kartı yeniden çizdiği için dblclick olayı gelmez; kendimiz yakalıyoruz
+            const now = Date.now();
+            if (lastCardClick.id === card.dataset.id && now - lastCardClick.t < 450) {
+                lastCardClick = { id: null, t: 0 };
+                openEditor(card.dataset.id);
+                return;
+            }
+            lastCardClick = { id: card.dataset.id, t: now };
+            // Paneldeki bir kutuda kalan odağı bırak; yoksa Delete tuşu kutuya gider
+            if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) document.activeElement.blur();
             select(card.dataset.id);
         });
 
-        $("#board").addEventListener("dblclick", (e) => {
-            const card = e.target.closest(".card[data-id]");
-            if (card) openEditor(card.dataset.id);
-        });
 
         // Ayar paneli
         const props = $("#props");
         props.addEventListener("input", (e) => {
             const b = state.blocks.find((x) => x.id === state.selected);
+            if (b && e.target.dataset.margin) {
+                const v = parseFloat(e.target.value);
+                if (!isFinite(v)) return;
+                if (!props._editing) { commit(); props._editing = true; }
+                b.opts = b.opts || {};
+                b.opts[e.target.dataset.margin] = Math.max(0, Math.min(80, v));
+                const info = analyze();
+                renderBoard(info);
+                renderPlan(info);
+                return;
+            }
             const path = e.target.dataset.prop;
             if (!b || !path) return;
             let v = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -1230,6 +1276,24 @@
             else if (btn.dataset.color) { commit(); setProp(b, "opts.color", btn.dataset.color); render(); }
             else if (btn.dataset.weight) { commit(); setProp(b, "opts.weight", btn.dataset.weight); render(); }
             else if (btn.dataset.fit) { commit(); b.fit = btn.dataset.fit; render(); }
+            else if (btn.dataset.mall) {
+                commit();
+                b.opts = Object.assign(b.opts || {}, { margin: +btn.dataset.mall, mTop: +btn.dataset.mall, mBottom: +btn.dataset.mall, mLeft: +btn.dataset.mall, mRight: +btn.dataset.mall });
+                render();
+            }
+            else if (btn.dataset.mbottom) { commit(); b.opts = Object.assign(b.opts || {}, { mBottom: +btn.dataset.mbottom }); render(); }
+            else if (btn.dataset.act === "margins-all") {
+                commit();
+                const mg = marginsOf(b.opts || {});
+                let n = 0;
+                state.blocks.forEach((x) => {
+                    if (x.kind !== "tpl" || x.tpl === "blank") return;
+                    x.opts = Object.assign(x.opts || {}, { mTop: mg.T, mBottom: mg.B, mLeft: mg.L, mRight: mg.R });
+                    n++;
+                });
+                render();
+                toast(`Kenar boşlukları ${n} şablon kartına uygulandı.`, "ok");
+            }
             else if (btn.dataset.act === "dup") duplicateBlock(b.id);
             else if (btn.dataset.act === "delete") deleteBlock(b.id);
             else if (btn.dataset.act === "split") splitPdfBlock(b.id);
@@ -1248,6 +1312,8 @@
                 return;
             }
             if (e.target.closest("[data-bind-open]")) { openBindingDialog(); return; }
+            const gm = e.target.closest("[data-gmode]");
+            if (gm) { if (gm.dataset.gmode !== state.gutterMode) { commit(); state.gutterMode = gm.dataset.gmode; render(); } return; }
             const f = e.target.closest("[data-fix]");
             if (f) {
                 const w = $("#plan")._warnings[+f.dataset.fix];
@@ -1543,6 +1609,7 @@
             duplex: state.duplex,
             binding: state.binding,
             gutter: state.gutter,
+            gutterMode: state.gutterMode,
             signature: state.signature,
             blocks: state.blocks,
             images: [...images.values()].filter((im) => used.has(im.id) || (!im.hidden && images.size < 40)),
@@ -1573,15 +1640,15 @@
             return;
         }
         commit();
-        images.clear();
+        // Eski görselleri silmiyoruz: "Geri al" ile önceki işe dönülebilsin
         (data.images || []).forEach((im) => images.set(im.id, im));
-        pdfs.clear();
         (data.pdfs || []).forEach((d) => pdfs.set(d.id, d));
         state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : "A4";
         state.orient = data.orient === "landscape" ? "landscape" : "portrait";
         state.duplex = data.duplex !== false;
         state.binding = BINDINGS[data.binding] ? data.binding : "side";
         state.gutter = data.gutter != null ? +data.gutter : 10;
+        state.gutterMode = data.gutterMode === "mirror" ? "mirror" : "both";
         state.signature = data.signature | 0;
         state.blocks = data.blocks;
         state.selected = null;
@@ -1659,7 +1726,7 @@
                 ${choice === "side" || choice === "top" ? `<label class="field">Spiral payı
                     <span class="inline-num"><input type="number" id="bGutter" min="0" max="25" value="${isSpiral() ? state.gutter : 10}"> mm</span></label>` : ""}
                 </div>
-                ${choice === "side" || choice === "top" ? `<p class="note">Spiral payı: ${choice === "side" ? "ön yüzlerde solda, arka yüzlerde sağda" : "ön yüzlerde üstte, arka yüzlerde altta"} çizgi/yazı basılmayan boşluk. Delikler sayfa içeriğini kesmez.</p>` : ""}`;
+                ${choice === "side" || choice === "top" ? `<p class="note">Spiral payı: delik tarafında çizgi/yazı basılmayan boşluk. Varsayılan olarak her sayfada ${choice === "side" ? "sağda ve solda" : "üstte ve altta"} aynı bırakılır, böylece sayfalar birbirinin aynısı olur. Baskı planından "sadece delik tarafı" seçilebilir.</p>` : ""}`;
         };
 
         const draw = () => {
@@ -1720,7 +1787,7 @@
         const L = blockPageIndexes(b);
         if (L.length <= 1) return b;
         const i = indexOf(b.id);
-        const mk = (extra, keepLabel) => Object.assign(clone(b), { id: uid(), label: keepLabel || b.kind === "empty" ? b.label : "" }, extra);
+        const mk = (extra, keepLabel) => Object.assign(freshLayerIds(clone(b)), { id: uid(), label: keepLabel || b.kind === "empty" ? b.label : "" }, extra);
         let before, single, after;
         if (b.kind === "pdf") {
             const toBlocks = (seq) => {
@@ -1770,26 +1837,64 @@
 
     /* ---------------- YAZI / LOGO ---------------- */
 
-    /* Kapaklar hariç tüm sayfalara bağlantılı sayfa numarası ekler */
+    /* Kapaklar hariç tüm sayfalara bağlantılı sayfa numarası ekler.
+       Numara alttaki boşluğa konur; şablonun alt boşluğu gerekirse büyütülür
+       ki numara çizgilerin üstüne binmesin. */
     function addPageNumbers() {
         const targets = state.blocks.filter((b) => b.kind !== "img" && !/kapak/i.test(b.label || ""));
         if (!targets.length) { toast("Önce sayfa ekleyin.", "warn"); return; }
-        commit();
-        const { W, H } = pageDims();
-        const outer = state.binding !== "top" && state.binding !== "none";
-        const link = uid();
-        const base = {
-            type: "text", role: "pagenum", text: "{s}", font: "arial", size: 10, color: "#555555", bold: false, italic: false,
-            align: outer ? "right" : "center", w: 24, x: outer ? W - 12 - 24 : (W - 24) / 2, y: H - 12, rot: 0, opacity: 1, mirror: outer, link
+        const mirrorOk = state.binding !== "top" && (state.duplex || isBooklet());
+        openModal(`
+            <h2>Sayfa numarası ekle</h2>
+            <div class="modal-body">
+                <div class="field">Konum
+                    <div class="radios">
+                        <label class="radio"><input type="radio" name="pnPos" value="center" checked><span><b>Alt orta</b><small>Her sayfada aynı yerde</small></span></label>
+                        <label class="radio"><input type="radio" name="pnPos" value="right"><span><b>Alt sağ köşe</b><small>Her sayfada sağda</small></span></label>
+                        ${mirrorOk ? `<label class="radio"><input type="radio" name="pnPos" value="outer"><span><b>Dış köşe (kitap gibi)</b><small>Ön yüzde sağda, arka yüzde solda — kitaplardaki gibi</small></span></label>` : ""}
+                    </div>
+                </div>
+                <div class="row2">
+                    <label class="field">Boyut (pt) <input type="number" id="pnSize" min="6" max="40" value="11"></label>
+                    <label class="field">Biçim
+                        <select id="pnFmt"><option value="{s}">3</option><option value="- {s} -">- 3 -</option><option value="Sayfa {s}">Sayfa 3</option><option value="{s} / {t}">3 / 48</option></select></label>
+                </div>
+                <p class="note">Numara sayfanın altındaki boşluğa konur. Şablonun alt boşluğu dar ise 15 mm'ye çıkarılır ki numara çizgilerin üstüne binmesin.</p>
+            </div>
+            <div class="modal-foot"><button class="btn" data-close>İptal</button><button class="btn primary" id="pnGo">Ekle</button></div>`);
+        const modal = $("#modal");
+        modal.onclick = (e) => {
+            if (e.target.closest("[data-close]")) { closeModal(); return; }
+            if (!e.target.closest("#pnGo")) return;
+            const pos = modal.querySelector('input[name="pnPos"]:checked').value;
+            const size = Math.max(6, Math.min(40, +modal.querySelector("#pnSize").value || 11));
+            const text = modal.querySelector("#pnFmt").value;
+            closeModal();
+            commit();
+            const { W, H } = pageDims();
+            const w = 40;
+            const g = isSpiral() && state.gutterMode !== "mirror" ? state.gutter : 0;
+            const boxH = size * 0.3528 * 1.25;
+            const base = {
+                type: "text", role: "pagenum", text, font: "arial", size, color: "#555555", bold: false, italic: false,
+                align: pos === "center" ? "center" : "right", w,
+                x: pos === "center" ? (W - w) / 2 : W - 10 - g - w,
+                y: H - 7.5 - boxH, rot: 0, opacity: 1, mirror: pos === "outer", link: uid()
+            };
+            let widened = 0;
+            targets.forEach((b) => {
+                b.layers = (b.layers || []).filter((l) => l.role !== "pagenum");
+                b.layers.push(Object.assign({}, base, { id: uid() }));
+                if (b.kind === "tpl" && b.tpl !== "blank") {
+                    const mg = marginsOf(b.opts || {});
+                    if (mg.B < 15) { b.opts = Object.assign(b.opts || {}, { mBottom: 15 }); widened++; }
+                }
+            });
+            render();
+            toast(`Sayfa numarası ${targets.length} karta eklendi (kapaklar hariç)${widened ? ", alt boşluk 15 mm yapıldı" : ""}.`, "ok", 6000, [
+                { label: "Düzenle", run: () => openEditor(targets[0].id, { layerId: targets[0].layers[targets[0].layers.length - 1].id }) }
+            ]);
         };
-        targets.forEach((b) => {
-            b.layers = (b.layers || []).filter((l) => l.role !== "pagenum");
-            b.layers.push(Object.assign({}, base, { id: uid() }));
-        });
-        render();
-        toast(`Sayfa numarası ${targets.length} karta eklendi (kapaklar hariç).`, "ok", 6000, [
-            { label: "Düzenle", run: () => openEditor(targets[0].id, { layerId: targets[0].layers[targets[0].layers.length - 1].id }) }
-        ]);
     }
 
     let editor = null;

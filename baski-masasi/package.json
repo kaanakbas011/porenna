@@ -1,7 +1,7 @@
 {
   "name": "baski-masasi",
   "productName": "Baskı Masası",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Kırtasiyeler için sürükle-bırak çıktı hazırlama: kareli/çizgili sayfalar, kapaklar, PDF ve arkalı önlü yazdırma. Windows 7, 8, 10 ve 11'de (32/64 bit) çalışır.",
   "main": "main.js",
   "private": true,

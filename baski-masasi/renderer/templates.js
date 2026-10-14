@@ -62,78 +62,96 @@ function weightOf(o) {
     return (WEIGHTS[o.weight] || WEIGHTS.normal).value;
 }
 
-function headerSvg(W, m, color) {
-    const y = m + 7;
+function headerSvg(W, L, R, T, color) {
+    const y = T + 7;
     return `<g font-family="Arial, Helvetica, sans-serif" font-size="3.4" fill="#666">`
-        + `<text x="${m}" y="${y}">Ad Soyad:</text>`
-        + `<text x="${r2(W * 0.62)}" y="${y}">Tarih:</text></g>`
-        + `<path d="M${r2(m + 17)} ${r2(y + 0.6)}H${r2(W * 0.58)}M${r2(W * 0.62 + 11)} ${r2(y + 0.6)}H${r2(W - m)}" stroke="${color}" stroke-width="0.2" fill="none"/>`;
+        + `<text x="${r2(L)}" y="${r2(y)}">Ad Soyad:</text>`
+        + `<text x="${r2(W * 0.62)}" y="${r2(y)}">Tarih:</text></g>`
+        + `<path d="M${r2(L + 17)} ${r2(y + 0.6)}H${r2(W * 0.58)}M${r2(W * 0.62 + 11)} ${r2(y + 0.6)}H${r2(W - R)}" stroke="${color}" stroke-width="0.2" fill="none"/>`;
 }
 
-/* Bir şablonun SVG içeriğini üretir (dış <svg> etiketi hariç) */
-function templateInner(tpl, W, H, o) {
-    o = o || {};
+/* Kenar boşlukları (mm): her kenar ayrı ayarlanabilir; ayarlanmamışsa genel "margin" */
+function marginsOf(o) {
     const m = o.margin != null ? +o.margin : 8;
+    const pick = (v) => (v != null && v !== "" && isFinite(+v) ? +v : m);
+    return { T: pick(o.mTop), B: pick(o.mBottom), L: pick(o.mLeft), R: pick(o.mRight) };
+}
+
+/* Bir şablonun SVG içeriğini üretir (dış <svg> etiketi hariç).
+   minStroke: ekranda küçük gösterirken çizgilerin kaybolmaması için
+   en ince çizgi kalınlığı (mm). Baskıda verilmez. */
+function templateInner(tpl, W, H, o, minStroke) {
+    o = o || {};
+    // Çok küçük gösterimde çizgi kalınlığı aralığın %18'ini geçmesin (yoksa sayfa boyanmış gibi görünür)
+    const gap = tpl === "mm" ? 5 : tpl === "music" ? (+o.spacing || 2) : (+o.spacing || 5);
+    const ms = Math.min(minStroke || 0, gap * 0.18);
+    const { T, B, L, R } = marginsOf(o);
     const color = colorOf(o, "gri");
-    const sw = weightOf(o);
-    const top = m + (o.header ? 14 : 0);
-    let out = o.header ? headerSvg(W, m, color) : "";
+    const sw = Math.max(weightOf(o), ms);
+    const top = T + (o.header ? 14 : 0);
+    const bottom = H - B;          // içeriğin bittiği y
+    const left = L, right = W - R; // içeriğin başladığı/bittiği x
+    const aw = Math.max(0, right - left), ah = Math.max(0, bottom - top);
+    let out = o.header ? headerSvg(W, L, R, T, color) : "";
 
     switch (tpl) {
         case "grid": {
             const s = +o.spacing || 5;
-            const cols = Math.floor((W - 2 * m) / s);
-            const rows = Math.floor((H - m - top) / s);
-            const x0 = (W - cols * s) / 2;
-            const y0 = top + ((H - m - top) - rows * s) / 2;
+            const cols = Math.floor(aw / s);
+            const rows = Math.floor(ah / s);
+            const x0 = left + (aw - cols * s) / 2;
+            const y0 = top + (ah - rows * s) / 2;
             let d = "";
             for (let i = 0; i <= cols; i++) d += `M${r2(x0 + i * s)} ${r2(y0)}V${r2(y0 + rows * s)}`;
             for (let j = 0; j <= rows; j++) d += `M${r2(x0)} ${r2(y0 + j * s)}H${r2(x0 + cols * s)}`;
-            out += `<path d="${d}" stroke="${color}" stroke-width="${sw}" fill="none"/>`;
+            out += `<path d="${d}" stroke="${color}" stroke-width="${r2(sw)}" fill="none"/>`;
             break;
         }
         case "dots": {
             const s = +o.spacing || 5;
-            const cols = Math.floor((W - 2 * m) / s);
-            const rows = Math.floor((H - m - top) / s);
-            const x0 = (W - cols * s) / 2;
-            const y0 = top + ((H - m - top) - rows * s) / 2;
+            const cols = Math.floor(aw / s);
+            const rows = Math.floor(ah / s);
+            const x0 = left + (aw - cols * s) / 2;
+            const y0 = top + (ah - rows * s) / 2;
+            const rad = r2(Math.max(0.28, ms * 0.8));
             let c = "";
             for (let i = 0; i <= cols; i++) {
-                for (let j = 0; j <= rows; j++) c += `<circle cx="${r2(x0 + i * s)}" cy="${r2(y0 + j * s)}" r="0.28"/>`;
+                for (let j = 0; j <= rows; j++) c += `<circle cx="${r2(x0 + i * s)}" cy="${r2(y0 + j * s)}" r="${rad}"/>`;
             }
             out += `<g fill="${color}">${c}</g>`;
             break;
         }
         case "mm": {
-            const cols = Math.floor((W - 2 * m) / 10) * 10;
-            const rows = Math.floor((H - m - top) / 10) * 10;
-            const x0 = (W - cols) / 2;
-            const y0 = top + ((H - m - top) - rows) / 2;
+            const cols = Math.floor(aw / 10) * 10;
+            const rows = Math.floor(ah / 10) * 10;
+            const x0 = left + (aw - cols) / 2;
+            const y0 = top + (ah - rows) / 2;
             const paths = ["", "", ""];
+            // Ekranda çok küçükken 1 mm çizgileri çizme (gri bir leke gibi görünür)
+            const skipFine = ms > 0.12;
             for (let i = 0; i <= cols; i++) {
                 const k = i % 10 === 0 ? 2 : i % 5 === 0 ? 1 : 0;
-                paths[k] += `M${r2(x0 + i)} ${r2(y0)}V${r2(y0 + rows)}`;
+                if (k || !skipFine) paths[k] += `M${r2(x0 + i)} ${r2(y0)}V${r2(y0 + rows)}`;
             }
             for (let j = 0; j <= rows; j++) {
                 const k = j % 10 === 0 ? 2 : j % 5 === 0 ? 1 : 0;
-                paths[k] += `M${r2(x0)} ${r2(y0 + j)}H${r2(x0 + cols)}`;
+                if (k || !skipFine) paths[k] += `M${r2(x0)} ${r2(y0 + j)}H${r2(x0 + cols)}`;
             }
-            const widths = [0.06, 0.14, 0.28];
+            const widths = [0.06, 0.14, 0.28].map((w) => Math.max(w, ms));
             paths.forEach((d, k) => {
-                out += `<path d="${d}" stroke="${color}" stroke-width="${widths[k]}" fill="none"/>`;
+                if (d) out += `<path d="${d}" stroke="${color}" stroke-width="${r2(widths[k])}" fill="none"/>`;
             });
             break;
         }
         case "lined": {
             const s = +o.spacing || 8;
-            const start = top + (o.header ? s : Math.max(s, 18));
+            const start = top + (o.header ? s : Math.max(s, 18 - Math.min(T, 10)));
             let d = "";
-            for (let y = start; y <= H - m + 0.01; y += s) d += `M${r2(m)} ${r2(y)}H${r2(W - m)}`;
-            out += `<path d="${d}" stroke="${color}" stroke-width="${sw}" fill="none"/>`;
+            for (let y = start; y <= bottom + 0.01; y += s) d += `M${r2(left)} ${r2(y)}H${r2(right)}`;
+            out += `<path d="${d}" stroke="${color}" stroke-width="${r2(sw)}" fill="none"/>`;
             if (o.leftLine) {
-                const x = m + 20;
-                out += `<path d="M${r2(x)} ${r2(top)}V${r2(H - m)}" stroke="#e08a8a" stroke-width="${r2(sw * 1.2)}" fill="none"/>`;
+                const x = left + 20;
+                out += `<path d="M${r2(x)} ${r2(top)}V${r2(bottom)}" stroke="#e08a8a" stroke-width="${r2(sw * 1.2)}" fill="none"/>`;
             }
             break;
         }
@@ -141,13 +159,13 @@ function templateInner(tpl, W, H, o) {
             const s = +o.spacing || 12;
             const gap = s * 0.55;
             let solid = "", dashed = "", base = "";
-            for (let y = top + 4; y + s <= H - m + 0.01; y += s + gap) {
-                solid += `M${r2(m)} ${r2(y)}H${r2(W - m)}M${r2(m)} ${r2(y + s)}H${r2(W - m)}`;
-                dashed += `M${r2(m)} ${r2(y + s / 3)}H${r2(W - m)}`;
-                base += `M${r2(m)} ${r2(y + (2 * s) / 3)}H${r2(W - m)}`;
+            for (let y = top + 4; y + s <= bottom + 0.01; y += s + gap) {
+                solid += `M${r2(left)} ${r2(y)}H${r2(right)}M${r2(left)} ${r2(y + s)}H${r2(right)}`;
+                dashed += `M${r2(left)} ${r2(y + s / 3)}H${r2(right)}`;
+                base += `M${r2(left)} ${r2(y + (2 * s) / 3)}H${r2(right)}`;
             }
-            out += `<path d="${solid}" stroke="${color}" stroke-width="${sw}" fill="none"/>`;
-            out += `<path d="${dashed}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="1.2 1.2" fill="none"/>`;
+            out += `<path d="${solid}" stroke="${color}" stroke-width="${r2(sw)}" fill="none"/>`;
+            out += `<path d="${dashed}" stroke="${color}" stroke-width="${r2(sw)}" stroke-dasharray="1.2 1.2" fill="none"/>`;
             out += `<path d="${base}" stroke="#e08a8a" stroke-width="${r2(sw * 1.1)}" fill="none"/>`;
             break;
         }
@@ -156,26 +174,26 @@ function templateInner(tpl, W, H, o) {
             const staff = s * 4;
             const gap = Math.max(10, staff * 1.4);
             let d = "";
-            for (let y = top + 6; y + staff <= H - m + 0.01; y += staff + gap) {
-                for (let k = 0; k < 5; k++) d += `M${r2(m)} ${r2(y + k * s)}H${r2(W - m)}`;
+            for (let y = top + 6; y + staff <= bottom + 0.01; y += staff + gap) {
+                for (let k = 0; k < 5; k++) d += `M${r2(left)} ${r2(y + k * s)}H${r2(right)}`;
             }
-            out += `<path d="${d}" stroke="${color}" stroke-width="${sw}" fill="none"/>`;
+            out += `<path d="${d}" stroke="${color}" stroke-width="${r2(sw)}" fill="none"/>`;
             break;
         }
         case "cornell": {
             const s = +o.spacing || 7;
-            const cueX = m + (W - 2 * m) * 0.3;
-            const titleY = m + 16;
-            const summaryY = H - m - Math.min(55, H * 0.18);
-            let d = `M${r2(m)} ${r2(titleY)}H${r2(W - m)}M${r2(m)} ${r2(summaryY)}H${r2(W - m)}M${r2(cueX)} ${r2(titleY)}V${r2(summaryY)}`;
+            const cueX = left + aw * 0.3;
+            const titleY = T + 16;
+            const summaryY = bottom - Math.min(55, H * 0.18);
+            let d = `M${r2(left)} ${r2(titleY)}H${r2(right)}M${r2(left)} ${r2(summaryY)}H${r2(right)}M${r2(cueX)} ${r2(titleY)}V${r2(summaryY)}`;
             out += `<path d="${d}" stroke="${color}" stroke-width="${r2(sw * 2)}" fill="none"/>`;
             let lines = "";
-            for (let y = titleY + s; y < summaryY - 0.5; y += s) lines += `M${r2(cueX + 3)} ${r2(y)}H${r2(W - m)}`;
-            out += `<path d="${lines}" stroke="${color}" stroke-width="${sw}" fill="none"/>`;
+            for (let y = titleY + s; y < summaryY - 0.5; y += s) lines += `M${r2(cueX + 3)} ${r2(y)}H${r2(right)}`;
+            out += `<path d="${lines}" stroke="${color}" stroke-width="${r2(sw)}" fill="none"/>`;
             out += `<g font-family="Arial, Helvetica, sans-serif" font-size="3.2" fill="#888">`
-                + `<text x="${r2(m)}" y="${r2(m + 5)}">Konu / Tarih</text>`
-                + `<text x="${r2(m + 1)}" y="${r2(titleY + 5)}">Anahtar kelimeler</text>`
-                + `<text x="${r2(m + 1)}" y="${r2(summaryY + 5)}">Özet</text></g>`;
+                + `<text x="${r2(left)}" y="${r2(T + 5)}">Konu / Tarih</text>`
+                + `<text x="${r2(left + 1)}" y="${r2(titleY + 5)}">Anahtar kelimeler</text>`
+                + `<text x="${r2(left + 1)}" y="${r2(summaryY + 5)}">Özet</text></g>`;
             break;
         }
         default:
@@ -265,22 +283,30 @@ function imageInner(page, W, H) {
    gutter: { side: 'left'|'right'|'top'|'bottom', size } — spiral payı.
            Şablonlar ve PDF sayfaları bu payın dışına yerleşir; kapak
            görselleri (inset olmayan) kağıdı kenardan kenara doldurur. */
-function pageSvg(page, W, H, extraAttrs, gutter) {
+function pageSvg(page, W, H, extraAttrs, gutter, view) {
     let x = 0, y = 0, cw = W, ch = H;
     const useGutter = gutter && gutter.size > 0 && (page.kind === "tpl" || page.inset);
     if (useGutter) {
-        const g = Math.min(gutter.size, Math.min(W, H) / 3);
-        if (gutter.side === "left") { x = g; cw -= g; }
-        if (gutter.side === "right") { cw -= g; }
-        if (gutter.side === "top") { y = g; ch -= g; }
-        if (gutter.side === "bottom") { ch -= g; }
+        const g = Math.min(gutter.size, Math.min(W, H) / 4);
+        const horiz = gutter.side === "left" || gutter.side === "right";
+        if (gutter.both) {
+            // Her sayfada iki yanda (veya üst-altta) aynı pay: sayfalar kaymaz
+            if (horiz) { x = g; cw -= 2 * g; } else { y = g; ch -= 2 * g; }
+        } else {
+            if (gutter.side === "left") { x = g; cw -= g; }
+            if (gutter.side === "right") { cw -= g; }
+            if (gutter.side === "top") { y = g; ch -= g; }
+            if (gutter.side === "bottom") { ch -= g; }
+        }
     }
+    // Ekran görünümü: piksel başına mm'ye göre en ince çizgi (yaklaşık 0,9 piksel)
+    const minStroke = view && view.pxPerMm ? 0.9 / view.pxPerMm : 0;
     let inner = "";
-    if (page.kind === "tpl") inner = templateInner(page.tpl, cw, ch, page.opts);
+    if (page.kind === "tpl") inner = templateInner(page.tpl, cw, ch, page.opts, minStroke);
     else if (page.kind === "img" && page.image) inner = imageInner(page, cw, ch);
     if (inner && useGutter) inner = `<svg x="${r2(x)}" y="${r2(y)}" width="${r2(cw)}" height="${r2(ch)}" viewBox="0 0 ${r2(cw)} ${r2(ch)}">${inner}</svg>`;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${extraAttrs || ""}>`
         + `<rect width="${W}" height="${H}" fill="#fff"/>${inner}${page.layers ? layersSvg(page.layers, W, H, page.ctx) : ""}</svg>`;
 }
 
-window.BM_TEMPLATES = { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, FONTS, PT_MM, templateInner, pageSvg, layersSvg, layerBox };
+window.BM_TEMPLATES = { marginsOf, PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, FONTS, PT_MM, templateInner, pageSvg, layersSvg, layerBox };

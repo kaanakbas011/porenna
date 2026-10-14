@@ -72,7 +72,7 @@ window.BM_createEditor = function (api) {
         const b = block();
         const { W, H } = api.pageDims();
         const ctx = api.ctxForBlock(b, viewBack);
-        root.querySelector(".ed-base").innerHTML = pageSvg(api.basePage(b, ctx), W, H, 'width="100%" height="100%" preserveAspectRatio="none"', ctx.gutter);
+        root.querySelector(".ed-base").innerHTML = pageSvg(api.basePage(b, ctx), W, H, 'width="100%" height="100%" preserveAspectRatio="none"', ctx.gutter, { pxPerMm: scale });
     }
 
     function drawLayers() {
@@ -462,6 +462,9 @@ window.BM_createEditor = function (api) {
         const page = root.querySelector(".ed-page");
 
         page.addEventListener("pointerdown", (e) => {
+            // Yazı kutusunda kalan odağı al: Delete ve ok tuşları öğeye gitsin
+            if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) document.activeElement.blur();
+            root.focus({ preventScroll: true });
             if (viewBack) return;
             const h = e.target.closest(".ed-h");
             if (!h) {
@@ -518,6 +521,8 @@ window.BM_createEditor = function (api) {
         page.addEventListener("pointercancel", end);
 
         page.addEventListener("dblclick", (e) => {
+            // Karta çift tıklayıp düzenleyici açılınca aynı çift tıklama buraya düşmesin
+            if (Date.now() - openedAt < 700) return;
             const h = e.target.closest(".ed-h.text");
             if (!h) { if (!viewBack) addText(mmFromEvent(e)); return; }
             const ta = root.querySelector("textarea[data-p=text]");
@@ -546,7 +551,7 @@ window.BM_createEditor = function (api) {
             const al = e.target.closest("[data-addlogo]");
             if (al) { addLogo(al.dataset.addlogo); return; }
             const pk = e.target.closest("[data-pick]");
-            if (pk) { selId = pk.dataset.pick; drawLayers(); drawList(); drawPanel(); }
+            if (pk) { selId = pk.dataset.pick; root.focus({ preventScroll: true }); drawLayers(); drawList(); drawPanel(); }
         });
         root.querySelector(".ed-file").addEventListener("change", async (e) => {
             const got = await api.importFiles(e.target.files);
@@ -687,8 +692,11 @@ window.BM_createEditor = function (api) {
         bind();
     }
 
+    let openedAt = 0;
+
     function open(id, opts) {
         if (!root) build();
+        openedAt = Date.now();
         blockId = id;
         selId = (opts && opts.layerId) || null;
         viewBack = false;

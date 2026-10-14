@@ -26,7 +26,7 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
   - Yazıda `{s}` sayfa numarasına, `{t}` toplam sayfa sayısına dönüşür. **"Sayfa numarası ekle"** tek tıkla kapaklar hariç tüm sayfalara numara koyar. Arka yüzlerde numara dış kenara geçer ("Arka yüzlerde sağ-sol yansıt").
 - **Temsili sayfa yerleri:** Açılışta "Ön kapak / İç sayfalar / Arka kapak" yerleri hazır gelir. Soldan şablon ya da görsel sürükleyip bu yerlere bırakın.
 - **Hazır şablonlar:** Boş, Kareli 5 mm, Kareli 1 cm, Çizgili 8 mm (sol kenar çizgili), Geniş çizgili, Noktalı, Milimetrik, Güzel yazı, Nota defteri, Cornell not.
-  Aralık, renk, çizgi kalınlığı, kenar boşluğu ve "Ad Soyad / Tarih" satırı ayarlanabilir. Şablonlar vektör olarak üretildiği için baskıda keskin çıkar.
+  Aralık, renk, çizgi kalınlığı, dört kenar için ayrı kenar boşluğu (üst, alt, sol, sağ; "tüm şablon sayfalarına uygula" düğmesiyle) ve "Ad Soyad / Tarih" satırı ayarlanabilir. Şablonlar vektör olarak üretildiği için baskıda keskin çıkar.
 - **Görseller:** Masaüstünden görselleri sürükleyip doğrudan bir sayfanın üstüne veya sol taraftaki görsel alanına bırakın. Yerleşim seçenekleri: Doldur, Sığdır, Esnet.
 - **PDF içe aktarma:** Hazır PDF'leri (ödev, fotokopi, föy) masaüstünden sürükleyip bir sayfa yerine ya da sol alana bırakın. Her sayfa 300 dpi kalitede alınır.
   PDF tek kart olarak durur. Sayfa aralığı (örneğin 2–5) ve kaç kez basılacağı seçilebilir. "Sayfalara böl" düğmesi her sayfayı ayrı kart yapar, böylece araya kareli/çizgili sayfa eklenebilir.
@@ -56,10 +56,10 @@ Bu modda PDF ve yazdırma işlemi tarayıcının yazdırma penceresi üzerinden 
 
 ## Windows kurulum dosyası
 
-Kırtasiyeye gönderilecek dosya **`BaskiMasasi-Kurulum-1.1.0.exe`**. Programın çalışması için gereken her şey bu dosyanın içindedir; karşı bilgisayara Node.js veya başka bir şey kurmak gerekmez.
+Kırtasiyeye gönderilecek dosya **`BaskiMasasi-Kurulum-1.2.0.exe`**. Programın çalışması için gereken her şey bu dosyanın içindedir; karşı bilgisayara Node.js veya başka bir şey kurmak gerekmez.
 
 - **Kurulum:** Çift tıklanınca soru sormadan kurulur ve program açılır. Yönetici izni istemez. Masaüstüne ve Başlat menüsüne "Baskı Masası" kısayolu ekler. Kaldırmak için Ayarlar → Uygulamalar menüsü kullanılır.
-- **`BaskiMasasi-Tasinabilir-1.1.0.exe`:** Kurulum yapmadan doğrudan çalışır (USB bellekten de olur).
+- **`BaskiMasasi-Tasinabilir-1.2.0.exe`:** Kurulum yapmadan doğrudan çalışır (USB bellekten de olur).
 - **Gereken sistem:** Windows 7 (SP1), 8, 8.1, 10 ve 11; 32 ve 64 bit. Tek dosya hepsinde çalışır, kurulum bilgisayara uygun olanı (32/64 bit) kendisi seçer. Bunun için program Electron 22 üzerine kuruludur; Windows 7/8'i destekleyen son sürüm budur. Program internete bağlanmadığı ve yalnızca kendi dosyalarını açtığı için eski sürüm güvenlik açısından sorun oluşturmaz. Windows XP ve Vista desteklenmez.
 - **İlk açılışta "Windows bilgisayarınızı korudu" uyarısı:** Program dijital imzalı olmadığı için çıkar. **Ek bilgi → Yine de çalıştır** ile açılır.
 

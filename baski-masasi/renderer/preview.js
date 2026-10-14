@@ -15,6 +15,7 @@ window.BM_createPreview = function (api) {
     let index = 0;
     let busy = false;
     let info = null;
+    let pxPerMm = 2; // ekrandaki sayfa ölçeği; ince çizgiler buna göre kalınlaştırılır
 
     /* ---------- veri ---------- */
 
@@ -43,18 +44,18 @@ window.BM_createPreview = function (api) {
         if (!q) return `<div class="pv-none"></div>`;
         const { W, H } = api.pageDims();
         if (q.blankBack) {
-            return `<div class="pv-page blank-back">${api.pageSvg({ kind: "blank" }, W, H, 'preserveAspectRatio="none"')}
+            return `<div class="pv-page blank-back">${api.pageSvg({ kind: "blank" }, W, H, 'preserveAspectRatio="none"', null, { pxPerMm })}
                 <span class="pv-note">Arka yüz boş<br><small>(tek yüz baskı)</small></span></div>`;
         }
         const p = q.p;
         const gutter = api.gutterFor(q.i, info.duplex);
-        const svg = api.pageSvg(api.pageOf(p, false, api.ctxFor(q.i, info)), W, H, 'preserveAspectRatio="none"', gutter);
+        const svg = api.pageSvg(api.pageOf(p, false, api.ctxFor(q.i, info)), W, H, 'preserveAspectRatio="none"', gutter, { pxPerMm });
         const name = p.auto ? (p.pad ? "Boş (kitapçık tamamlama)" : "Boş (otomatik)") : p.block.kind === "empty" ? (p.block.label || "Boş yer") : api.blockName(p.block);
         const canRotate = p.block && (p.block.kind === "img" || p.block.kind === "pdf");
         const side = info.booklet ? "" : info.duplex ? (q.i % 2 === 0 ? " · ön yüz" : " · arka yüz") : "";
         return `<div class="pv-page${p.auto ? " auto" : ""}" data-pi="${q.i}">
             ${svg}
-            ${gutter ? `<div class="pv-gutter g-${gutter.side}" style="--g:${(gutter.size / (gutter.side === "left" || gutter.side === "right" ? W : H)) * 100}%"></div>` : ""}
+            ${gutterHtml(gutter, W, H)}
             ${p.block ? `<div class="pv-tools">
                 ${canRotate ? `<button data-rot="${q.i}" title="Bu sayfayı 90° döndür">↻</button>` : ""}
                 <button data-edit="${q.i}" title="Yazı / logo ekle">✎</button>
@@ -62,6 +63,15 @@ window.BM_createPreview = function (api) {
             </div>` : ""}
             <div class="pv-cap"><b>s. ${q.i + 1}</b>${side} — ${esc(name)}</div>
         </div>`;
+    }
+
+    /* Fare sayfanın üstündeyken spiral payını taralı gösterir */
+    function gutterHtml(g, W, H) {
+        if (!g || !(g.size > 0)) return "";
+        const horiz = g.side === "left" || g.side === "right";
+        const pct = (g.size / (horiz ? W : H)) * 100;
+        const sides = g.both ? (horiz ? ["left", "right"] : ["top", "bottom"]) : [g.side];
+        return sides.map((sd) => `<div class="pv-gutter g-${sd}" style="--g:${pct}%"></div>`).join("");
     }
 
     function spineHtml() {
@@ -73,12 +83,12 @@ window.BM_createPreview = function (api) {
         return `<div class="pv-spine gap"></div>`;
     }
 
-    function sizeBook() {
+    /* Sahneye sığan en büyük sayfa boyutu (piksel) */
+    function computeSize() {
         const stage = root.querySelector(".pv-stage");
-        const book = root.querySelector(".pv-book");
         const { W, H } = api.pageDims();
-        const aw = stage.clientWidth - 140;
-        const ah = stage.clientHeight - 40;
+        const aw = stage.clientWidth - 130;
+        const ah = stage.clientHeight - 24;
         let pw, ph;
         if (vertical()) {
             ph = Math.min(ah / 2, (aw * H) / W);
@@ -87,8 +97,15 @@ window.BM_createPreview = function (api) {
             pw = Math.min(aw / 2, (ah * W) / H);
             ph = (pw * H) / W;
         }
-        book.style.setProperty("--pw", Math.floor(pw) + "px");
-        book.style.setProperty("--ph", Math.floor(ph) + "px");
+        return { pw: Math.max(60, Math.floor(pw)), ph: Math.max(80, Math.floor(ph)), W };
+    }
+
+    function sizeBook() {
+        const book = root.querySelector(".pv-book");
+        const { pw, ph, W } = computeSize();
+        pxPerMm = pw / W;
+        book.style.setProperty("--pw", pw + "px");
+        book.style.setProperty("--ph", ph + "px");
         // halka sayısı sayfa boyuna göre
         const spine = book.querySelector(".pv-spine.spiral");
         if (spine) {
@@ -103,6 +120,8 @@ window.BM_createPreview = function (api) {
         compute();
         const book = root.querySelector(".pv-book");
         book.className = `pv-book ${vertical() ? "vertical" : "horizontal"} b-${api.binding()}`;
+        const { pw, W } = computeSize();
+        pxPerMm = pw / W;
         const sp = spreads[index] || [null, null];
         book.innerHTML = `<div class="pv-slot a">${pageHtml(sp[0])}</div><div class="pv-slot b">${pageHtml(sp[1])}</div>${spineHtml()}`;
         sizeBook();
@@ -236,7 +255,12 @@ window.BM_createPreview = function (api) {
             else if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? api.redo() : api.undo(); }
             else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); api.redo(); }
         });
-        window.addEventListener("resize", () => { if (isOpen()) sizeBook(); });
+        window.addEventListener("resize", () => { if (isOpen() && !busy) draw(); });
+        root.querySelector(".pv-toggle").onclick = () => {
+            root.classList.toggle("tiles-hidden");
+            root.querySelector(".pv-toggle").textContent = root.classList.contains("tiles-hidden") ? "Şablonları göster ▴" : "Şablonları gizle ▾";
+            draw();
+        };
     }
 
     function build() {
@@ -259,7 +283,8 @@ window.BM_createPreview = function (api) {
                 <button class="pv-nav pv-next" aria-label="Sonraki sayfa">›</button>
             </div>
             <div class="pv-foot">
-                <div class="pv-hint"><b>Sayfayı değiştirmek için</b> aşağıdan bir şablon/görsel sürükleyip sayfanın üstüne bırakın (yalnızca o sayfa değişir). Sayfaya tıklayınca ya da ←/→ ile çevrilir. ↻ döndürür.</div>
+                <div class="pv-hint"><span><b>Sayfa değiştirmek için</b> şablonu sayfanın üstüne sürükleyin (yalnızca o sayfa değişir) · Çevirmek için ←/→ veya sayfaya tıklayın</span>
+                    <button class="pv-toggle btn small">Şablonları gizle ▾</button></div>
                 <div class="pv-tiles tiles"></div>
             </div>`;
         document.body.appendChild(root);

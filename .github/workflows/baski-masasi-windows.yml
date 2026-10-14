@@ -10,6 +10,9 @@ on:
       - "baski-masasi/**"
       - ".github/workflows/baski-masasi-windows.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -32,3 +35,19 @@ jobs:
             baski-masasi/dist/BaskiMasasi-Kurulum-*.exe
             baski-masasi/dist/BaskiMasasi-Tasinabilir-*.exe
           retention-days: 30
+      # Doğrudan indirme bağlantısı için GitHub Releases sayfasına da koy
+      - id: ver
+        shell: bash
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: baski-masasi-v${{ steps.ver.outputs.v }}
+          name: Baskı Masası ${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            **BaskiMasasi-Kurulum-${{ steps.ver.outputs.v }}.exe** — çift tıklayınca kurulur ve açılır (Windows 7, 8, 10, 11; 32/64 bit).
+            **BaskiMasasi-Tasinabilir-${{ steps.ver.outputs.v }}.exe** — kurulum gerektirmeden çalışır.
+            İlk açılışta "Windows bilgisayarınızı korudu" uyarısı çıkarsa: Ek bilgi → Yine de çalıştır.
+          files: |
+            baski-masasi/dist/BaskiMasasi-Kurulum-*.exe
+            baski-masasi/dist/BaskiMasasi-Tasinabilir-*.exe

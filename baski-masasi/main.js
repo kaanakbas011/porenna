@@ -17,6 +17,7 @@ function createWindow() {
         minWidth: 1100,
         minHeight: 680,
         title: "Baskı Masası",
+        icon: path.join(__dirname, "renderer", "icon.png"),
         backgroundColor: "#efece6",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),

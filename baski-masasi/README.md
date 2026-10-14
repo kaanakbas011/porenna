@@ -54,16 +54,19 @@ npm start
 Programı kurmadan denemek için `renderer/index.html` dosyasını Chrome ya da Edge'de açabilirsiniz.
 Bu modda PDF ve yazdırma işlemi tarayıcının yazdırma penceresi üzerinden yapılır ve arkalı önlü ayarını o pencereden seçmeniz gerekir.
 
-## Windows kurulum dosyası üretme
+## Windows kurulum dosyası
 
-Bir Windows bilgisayarda:
+Kırtasiyeye gönderilecek dosya **`BaskiMasasi-Kurulum-1.0.0.exe`**. Programın çalışması için gereken her şey bu dosyanın içindedir; karşı bilgisayara Node.js veya başka bir şey kurmak gerekmez.
 
-```bash
-npm install
-npm run dist
-```
+- **Kurulum:** Çift tıklanınca soru sormadan kurulur ve program açılır. Yönetici izni istemez. Masaüstüne ve Başlat menüsüne "Baskı Masası" kısayolu ekler. Kaldırmak için Ayarlar → Uygulamalar menüsü kullanılır.
+- **`BaskiMasasi-Tasinabilir-1.0.0.exe`:** Kurulum yapmadan doğrudan çalışır (USB bellekten de olur).
+- **Gereken sistem:** Windows 10 veya 11, 64 bit. Windows 7/8'de çalışmaz.
+- **İlk açılışta "Windows bilgisayarınızı korudu" uyarısı:** Program dijital imzalı olmadığı için çıkar. **Ek bilgi → Yine de çalıştır** ile açılır.
 
-`dist/` klasöründe bir kurulum dosyası (`Baskı Masası Setup 1.0.0.exe`) ve kurulum gerektirmeyen taşınabilir bir `.exe` oluşur.
+### Exe dosyasını üretmek
+
+- **Kolay yol (GitHub):** Kod GitHub'a her gönderildiğinde `.github/workflows/baski-masasi-windows.yml` gerçek bir Windows makinede exe dosyalarını üretir. GitHub → **Actions** → **Baskı Masası Windows** → son çalıştırma → **Artifacts** → `BaskiMasasi-Windows` zip'ini indirin. Elle başlatmak için **Run workflow** düğmesi vardır.
+- **Kendi bilgisayarınızda:** [Node.js](https://nodejs.org) LTS kurulu bir Windows'ta `npm install` ve ardından `npm run dist` çalıştırın; dosyalar `dist/` klasörüne çıkar.
 
 ## Dosyalar
 
@@ -73,6 +76,7 @@ npm run dist
 | `preload.js` | Arayüze güvenli masaüstü köprüsü (`window.desktop`) |
 | `renderer/index.html` | Ekran düzeni |
 | `renderer/app.js` | Sürükle-bırak, sayfa listesi, baskı planı, yazdırma akışı |
+| `build/icon.png` | Program ve kurulum simgesi |
 | `renderer/editor.js` | Sayfa düzenleyici: yazı ve logo katmanları, şeffaf arka plan, diğer sayfalara uygulama |
 | `renderer/preview.js` | Defter görünümü: açılmış defter, sayfa çevirme, tek sayfa değiştirme |
 | `renderer/templates.js` | Kareli, çizgili vb. şablonların SVG üretimi |

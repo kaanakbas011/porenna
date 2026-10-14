@@ -7,8 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
-    "dist:portable": "electron-builder --win portable",
+    "dist": "electron-builder --win --publish never",
     "vendor": "node -e \"const fs=require('fs'),s='node_modules/pdfjs-dist/',d='renderer/vendor/';fs.mkdirSync(d,{recursive:true});for(const f of ['pdf.min.js','pdf.worker.min.js'])fs.copyFileSync(s+'build/'+f,d+f);for(const f of ['cmaps','standard_fonts'])fs.cpSync(s+f,d+f,{recursive:true});fs.copyFileSync(s+'LICENSE',d+'PDFJS-LICENSE')\""
   },
   "devDependencies": {
@@ -25,19 +24,39 @@
       "renderer/**/*"
     ],
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
-      ]
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "Baskı Masası"
-    }
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Baskı Masası",
+      "uninstallDisplayName": "Baskı Masası",
+      "artifactName": "BaskiMasasi-Kurulum-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "BaskiMasasi-Tasinabilir-${version}.${ext}"
+    },
+    "publish": null
   }
 }

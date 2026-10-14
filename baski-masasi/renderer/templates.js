@@ -184,6 +184,65 @@ function templateInner(tpl, W, H, o) {
     return out;
 }
 
+/* ---------- Yazı ve logo katmanları ---------- */
+
+const FONTS = {
+    arial: { label: "Arial", css: "Arial, Helvetica, sans-serif" },
+    segoe: { label: "Segoe UI", css: "'Segoe UI', Arial, sans-serif" },
+    verdana: { label: "Verdana", css: "Verdana, Geneva, sans-serif" },
+    times: { label: "Times New Roman", css: "'Times New Roman', Times, serif" },
+    georgia: { label: "Georgia", css: "Georgia, serif" },
+    comic: { label: "Comic Sans (okul)", css: "'Comic Sans MS', 'Comic Neue', cursive" },
+    courier: { label: "Courier New", css: "'Courier New', Courier, monospace" },
+    impact: { label: "Impact (başlık)", css: "Impact, 'Arial Black', sans-serif" }
+};
+
+const PT_MM = 0.3528; // 1 punto = 0,3528 mm
+const LINE_H = 1.25;
+
+const escXml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* {s} sayfa numarası, {t} toplam sayfa */
+function layerText(l, ctx) {
+    return String(l.text || "").replace(/\{s\}/g, ctx && ctx.n ? ctx.n : "1").replace(/\{t\}/g, ctx && ctx.total ? ctx.total : "1");
+}
+
+/* Katmanın sayfadaki kutusu (mm) */
+function layerBox(l, W, ctx) {
+    let h = l.h;
+    if (l.type === "text") h = Math.max(1, String(l.text || "").split("\n").length) * l.size * PT_MM * LINE_H;
+    let x = l.x;
+    if (ctx && ctx.mirror && l.mirror) x = W - l.x - l.w;
+    return { x, y: l.y, w: l.w, h };
+}
+
+function layersSvg(layers, W, H, ctx) {
+    let out = "";
+    for (const l of layers || []) {
+        const b = layerBox(l, W, ctx);
+        const tr = l.rot ? ` transform="rotate(${r2(l.rot)} ${r2(b.x + b.w / 2)} ${r2(b.y + b.h / 2)})"` : "";
+        const op = l.opacity != null && l.opacity < 1 ? ` opacity="${r2(l.opacity)}"` : "";
+        if (l.type === "text") {
+            const fs = l.size * PT_MM;
+            const lh = fs * LINE_H;
+            // Arka yüzde yansıtılan yazının hizası da ters döner (sağ ↔ sol)
+            let align = l.align;
+            if (ctx && ctx.mirror && l.mirror) align = align === "left" ? "right" : align === "right" ? "left" : align;
+            const anchor = align === "center" ? "middle" : align === "right" ? "end" : "start";
+            const tx = align === "center" ? b.x + b.w / 2 : align === "right" ? b.x + b.w : b.x;
+            const lines = layerText(l, ctx).split("\n");
+            const spans = lines.map((ln, i) =>
+                `<tspan x="${r2(tx)}" y="${r2(b.y + i * lh + (lh - fs) / 2 + fs * 0.8)}">${escXml(ln) || " "}</tspan>`).join("");
+            const font = (FONTS[l.font] || FONTS.arial).css;
+            out += `<text font-family="${font}" font-size="${r2(fs)}" fill="${escXml(l.color || "#222")}"`
+                + `${l.bold ? ' font-weight="bold"' : ""}${l.italic ? ' font-style="italic"' : ""} text-anchor="${anchor}" xml:space="preserve"${tr}${op}>${spans}</text>`;
+        } else if (l.url) {
+            out += `<image href="${l.url}" x="${r2(b.x)}" y="${r2(b.y)}" width="${r2(b.w)}" height="${r2(b.h)}" preserveAspectRatio="xMidYMid meet"${tr}${op}/>`;
+        }
+    }
+    return out;
+}
+
 /* Görseli W×H kutusuna, istenen açıyla (0/90/180/270) yerleştirir */
 function imageInner(page, W, H) {
     const par = page.fit === "contain" ? "xMidYMid meet" : page.fit === "stretch" ? "none" : "xMidYMid slice";
@@ -221,7 +280,7 @@ function pageSvg(page, W, H, extraAttrs, gutter) {
     else if (page.kind === "img" && page.image) inner = imageInner(page, cw, ch);
     if (inner && useGutter) inner = `<svg x="${r2(x)}" y="${r2(y)}" width="${r2(cw)}" height="${r2(ch)}" viewBox="0 0 ${r2(cw)} ${r2(ch)}">${inner}</svg>`;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${extraAttrs || ""}>`
-        + `<rect width="${W}" height="${H}" fill="#fff"/>${inner}</svg>`;
+        + `<rect width="${W}" height="${H}" fill="#fff"/>${inner}${page.layers ? layersSvg(page.layers, W, H, page.ctx) : ""}</svg>`;
 }
 
-window.BM_TEMPLATES = { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, templateInner, pageSvg };
+window.BM_TEMPLATES = { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, FONTS, PT_MM, templateInner, pageSvg, layersSvg, layerBox };

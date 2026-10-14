@@ -48,7 +48,7 @@ window.BM_createPreview = function (api) {
         }
         const p = q.p;
         const gutter = api.gutterFor(q.i, info.duplex);
-        const svg = api.pageSvg(api.pageOf(p, false), W, H, 'preserveAspectRatio="none"', gutter);
+        const svg = api.pageSvg(api.pageOf(p, false, api.ctxFor(q.i, info)), W, H, 'preserveAspectRatio="none"', gutter);
         const name = p.auto ? (p.pad ? "Boş (kitapçık tamamlama)" : "Boş (otomatik)") : p.block.kind === "empty" ? (p.block.label || "Boş yer") : api.blockName(p.block);
         const canRotate = p.block && (p.block.kind === "img" || p.block.kind === "pdf");
         const side = info.booklet ? "" : info.duplex ? (q.i % 2 === 0 ? " · ön yüz" : " · arka yüz") : "";
@@ -57,6 +57,7 @@ window.BM_createPreview = function (api) {
             ${gutter ? `<div class="pv-gutter g-${gutter.side}" style="--g:${(gutter.size / (gutter.side === "left" || gutter.side === "right" ? W : H)) * 100}%"></div>` : ""}
             ${p.block ? `<div class="pv-tools">
                 ${canRotate ? `<button data-rot="${q.i}" title="Bu sayfayı 90° döndür">↻</button>` : ""}
+                <button data-edit="${q.i}" title="Yazı / logo ekle">✎</button>
                 <button data-goto="${q.i}" title="Sayfalar listesinde göster">☰</button>
             </div>` : ""}
             <div class="pv-cap"><b>s. ${q.i + 1}</b>${side} — ${esc(name)}</div>
@@ -177,6 +178,12 @@ window.BM_createPreview = function (api) {
         root.querySelector(".pv-book").addEventListener("click", (e) => {
             const rot = e.target.closest("[data-rot]");
             if (rot) { api.rotatePage(info.pages[+rot.dataset.rot]); return; }
+            const ed = e.target.closest("[data-edit]");
+            if (ed) {
+                const p = info.pages[+ed.dataset.edit];
+                if (p && p.block) api.editBlock(p.block.id);
+                return;
+            }
             const go = e.target.closest("[data-goto]");
             if (go) {
                 const p = info.pages[+go.dataset.goto];

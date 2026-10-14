@@ -118,8 +118,28 @@
         return "?";
     }
 
+    /* Logoların görsel adreslerini çözer */
+    function resolveLayers(layers, useThumb) {
+        return (layers || []).map((l) => {
+            if (l.type !== "logo") return l;
+            const im = images.get(l.imageId);
+            return Object.assign({}, l, { url: im ? (useThumb ? im.thumb : im.url) : null });
+        });
+    }
+
+    /* Sayfa + üstündeki yazı/logo katmanları.
+       ctx: { n: sayfa no, total, mirror: arka yüzde yansıt } */
+    function blockPage(b, useThumb, pi, ctx) {
+        const page = blockContent(b, useThumb, pi);
+        if (b.layers && b.layers.length) {
+            page.layers = resolveLayers(b.layers, useThumb);
+            page.ctx = ctx || { n: 1, total: 1 };
+        }
+        return page;
+    }
+
     /* pi: PDF bloklarında belgenin kaçıncı sayfası (0 tabanlı) */
-    function blockPage(b, useThumb, pi) {
+    function blockContent(b, useThumb, pi) {
         if (b.kind === "tpl") return { kind: "tpl", tpl: b.tpl, opts: b.opts };
         if (b.kind === "img") {
             const im = images.get(b.imageId);
@@ -257,8 +277,17 @@
         return { side: back ? "bottom" : "top", size: state.gutter };
     }
 
-    function pageOf(p, useThumb) {
-        return p && p.block ? blockPage(p.block, useThumb, p.pi) : { kind: "blank" };
+    function pageOf(p, useThumb, ctx) {
+        return p && p.block ? blockPage(p.block, useThumb, p.pi, ctx) : { kind: "blank" };
+    }
+
+    /* Arka yüzde (veya kitapçığın sol sayfasında) yansıtma yapılır mı */
+    function mirrorAt(i, info) {
+        return state.binding !== "top" && (info.duplex || info.booklet) && i % 2 === 1;
+    }
+
+    function ctxFor(i, info) {
+        return { n: i + 1, total: info.pages.length, mirror: mirrorAt(i, info) };
     }
 
     /* Kitapçık dizgisi: her kağıdın ön ve arka yüzüne ikişer sayfa.
@@ -284,11 +313,11 @@
         const { W, H } = pageDims();
         if (info.booklet) {
             const paper = BOOKLET_PAPER[state.pageSize];
-            return { W, H, SW: Math.max(2 * W, paper.w), SH: Math.max(H, paper.h), sides: impose(info.pages) };
+            return { W, H, SW: Math.max(2 * W, paper.w), SH: Math.max(H, paper.h), sides: impose(info.pages), info };
         }
         return {
-            W, H, SW: W, SH: H,
-            sides: info.pages.map((p, i) => ({ kind: "page", p, gutter: gutterFor(i, info.duplex) }))
+            W, H, SW: W, SH: H, info,
+            sides: info.pages.map((p, i) => ({ kind: "page", p, i, gutter: gutterFor(i, info.duplex) }))
         };
     }
 
@@ -348,6 +377,11 @@
         return `s. ${idx[0] + 1}–${idx[idx.length - 1] + 1}`;
     }
 
+    function firstCtx(b, info) {
+        const idx = info.ranges.get(b.id);
+        return idx && idx.length ? ctxFor(idx[0], info) : { n: 1, total: info.pages.length };
+    }
+
     function renderBoard(info) {
         rangeDuplex = info.duplex && !info.booklet;
         const { W, H } = pageDims();
@@ -364,13 +398,14 @@
             const badge = b.kind === "pdf"
                 ? `${b.to - b.from + 1} s.${b.count > 1 ? " ×" + b.count : ""}`
                 : `×${b.count}`;
-            const thumb = empty
+            const thumb = empty && !(b.layers && b.layers.length)
                 ? `<div class="placeholder"><span>${esc(b.label || "Boş yer")}</span><small>Şablon veya görsel sürükleyin</small></div>`
-                : sheetSvg(blockPage(b, true));
+                : sheetSvg(blockPage(b, true, undefined, firstCtx(b, info)));
             html += `<div class="card${sel}${empty ? " empty" : ""}" draggable="true" data-id="${b.id}">
                 <div class="card-top">
                     <span class="pg">${rangeLabel(info.ranges.get(b.id))}</span>
                     ${b.kind === "pdf" ? '<span class="flag pdf">PDF</span>' : ""}
+                    ${b.layers && b.layers.length ? `<span class="flag txt" title="Yazı / logo var">✎${b.layers.length}</span>` : ""}
                     ${b.backBlank ? '<span class="flag" title="Arkalı önlü baskıda arkası boş">arkası boş</span>' : ""}
                     <button class="icon-btn del" data-del="${b.id}" title="Sil">×</button>
                 </div>
@@ -402,7 +437,7 @@
                 <div class="tile-thumb"><img src="${d.pages[0].thumb}" alt=""><span class="pdf-count">PDF · ${d.pages.length} s.</span></div>
                 <span>${esc(d.name)}</span>
                 <button class="icon-btn rm" data-rmpdf="${d.id}" title="Kütüphaneden kaldır">×</button>
-            </div>`).join("") + [...images.values()].map((im) => `
+            </div>`).join("") + [...images.values()].filter((im) => !im.hidden).map((im) => `
             <div class="tile img-tile" draggable="true" data-image="${im.id}" title="${esc(im.name)}">
                 <div class="tile-thumb"><img src="${im.thumb}" alt=""></div>
                 <span>${esc(im.name)}</span>
@@ -417,6 +452,13 @@
                 <div class="tile-thumb">${pageSvg({ kind: "tpl", tpl: p.tpl, opts: p.opts }, W, H)}</div>
                 <span>${esc(p.name)}</span>
             </div>`).join("");
+        $("#textTiles").innerHTML = `
+            <div class="tile tool-tile" draggable="true" data-tool="text" title="Sayfaya yazı ekle">
+                <div class="tool-ico">T</div><span>Yazı ekle</span></div>
+            <div class="tile tool-tile" draggable="true" data-tool="logo" title="Sayfaya logo ekle">
+                <div class="tool-ico">▣</div><span>Logo ekle</span></div>
+            <div class="tile tool-tile wide" data-tool="pagenum" title="Kapaklar hariç tüm sayfalara sayfa numarası ekler">
+                <div class="tool-ico small">1 2 3</div><span>Sayfa numarası ekle</span></div>`;
         $("#slotTiles").innerHTML = `
             <div class="tile slot-tile" draggable="true" data-slot="1" title="Temsili sayfa yeri">
                 <div class="tile-thumb"><div class="placeholder mini"><span>?</span></div></div>
@@ -535,6 +577,9 @@
 
         h += `<div class="group-title">Arkalı önlü</div>
             <label class="check"><input type="checkbox" data-prop="backBlank" ${b.backBlank ? "checked" : ""}> <span>Bu sayfanın arkası boş kalsın <small>(kapaklar için)</small></span></label>`;
+
+        h += `<div class="group-title">Yazı ve logo</div>
+            <button class="btn wide" data-act="edit">✎ Yazı / logo ekle ve düzenle${b.layers && b.layers.length ? ` <small>(${b.layers.length} öğe)</small>` : ""}</button>`;
 
         h += `<div class="actions">
             <button class="btn" data-act="dup">⧉ Çoğalt</button>
@@ -912,7 +957,7 @@
     }
 
     function removeImage(id) {
-        if (state.blocks.some((b) => b.kind === "img" && b.imageId === id)) {
+        if (state.blocks.some((b) => (b.kind === "img" && b.imageId === id) || (b.layers || []).some((l) => l.imageId === id || l.srcImageId === id))) {
             toast("Bu görsel bir sayfada kullanılıyor. Önce o sayfayı silin veya değiştirin.", "warn");
             return;
         }
@@ -944,6 +989,7 @@
         const r = card.getBoundingClientRect();
         const x = (e.clientX - r.left) / r.width;
         if (drag && drag.type === "block") return x < 0.5 ? "before" : "after";
+        if (drag && drag.type === "tool") return "replace";
         if (x < 0.22) return "before";
         if (x > 0.78) return "after";
         return "replace";
@@ -960,6 +1006,7 @@
             if (t.dataset.preset) drag = { type: "preset", key: t.dataset.preset };
             else if (t.dataset.image) drag = { type: "image", id: t.dataset.image };
             else if (t.dataset.pdf) drag = { type: "pdf", id: t.dataset.pdf };
+            else if (t.dataset.tool) drag = { type: "tool", tool: t.dataset.tool };
             else if (t.dataset.slot) drag = { type: "slot" };
             else if (t.dataset.id) {
                 drag = { type: "block", id: t.dataset.id };
@@ -1010,6 +1057,11 @@
 
             if (current && current.type === "block") {
                 if (targetId !== current.id) moveBlock(current.id, targetId, zone);
+                return;
+            }
+            if (current && current.type === "tool") {
+                if (targetId) openEditor(targetId, { addText: current.tool === "text", pickLogo: current.tool === "logo" });
+                else toast("Yazı veya logoyu bir sayfa kartının üstüne bırakın.");
                 return;
             }
             let payloads = [];
@@ -1104,6 +1156,13 @@
             else if (tile.dataset.image) payload = { type: "image", id: tile.dataset.image };
             else if (tile.dataset.pdf) payload = { type: "pdf", id: tile.dataset.pdf };
             else if (tile.dataset.slot) payload = { type: "slot" };
+            else if (tile.dataset.tool) {
+                if (tile.dataset.tool === "pagenum") { addPageNumbers(); return; }
+                const target = state.blocks.find((b) => b.id === state.selected) || state.blocks.find((b) => b.kind !== "img") || state.blocks[0];
+                if (!target) { toast("Önce bir sayfa ekleyin.", "warn"); return; }
+                openEditor(target.id, { addText: tile.dataset.tool === "text", pickLogo: tile.dataset.tool === "logo" });
+                return;
+            }
             if (!payload) return;
             const sel = state.blocks.find((b) => b.id === state.selected);
             if (sel && payload.type !== "slot") dropPayloads([payload], sel.id, "replace");
@@ -1123,6 +1182,11 @@
             if (!card) { if (e.target === $("#board")) { state.selected = null; render(); } return; }
             if (card.dataset.add) { addSlot(); return; }
             select(card.dataset.id);
+        });
+
+        $("#board").addEventListener("dblclick", (e) => {
+            const card = e.target.closest(".card[data-id]");
+            if (card) openEditor(card.dataset.id);
         });
 
         // Ayar paneli
@@ -1169,6 +1233,7 @@
             else if (btn.dataset.act === "dup") duplicateBlock(b.id);
             else if (btn.dataset.act === "delete") deleteBlock(b.id);
             else if (btn.dataset.act === "split") splitPdfBlock(b.id);
+            else if (btn.dataset.act === "edit") openEditor(b.id);
             else if (btn.dataset.act === "turn") { commit(); b.turn = ((b.turn || 0) + 90) % 360; render(); }
             else if (btn.dataset.act === "allpages") { commit(); b.from = 1; b.to = pdfs.get(b.pdfId).pages.length; render(); }
             else if (btn.dataset.act === "clear") { commit(); applyContent(b, { kind: "empty" }); render(); }
@@ -1204,6 +1269,7 @@
         // Klavye
         document.addEventListener("keydown", (e) => {
             if (preview && preview.isOpen()) return; // önizleme kendi tuşlarını yönetir
+            if (editor && editor.isOpen()) return;
             const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
             const mod = e.ctrlKey || e.metaKey;
             if (mod && e.key.toLowerCase() === "z" && !e.shiftKey && !typing) { e.preventDefault(); undo(); }
@@ -1212,6 +1278,7 @@
             else if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); savePdf(); }
             else if (e.key === " " && !typing && $("#modalBack").hidden) { e.preventDefault(); openPreview(); }
             else if (mod && e.key.toLowerCase() === "d" && state.selected && !typing) { e.preventDefault(); duplicateBlock(state.selected); }
+            else if (e.key === "Enter" && state.selected && !typing && $("#modalBack").hidden) { e.preventDefault(); openEditor(state.selected); }
             else if ((e.key === "Delete" || e.key === "Backspace") && state.selected && !typing) { e.preventDefault(); deleteBlock(state.selected); }
             else if (e.key === "Escape") { if (!$("#modalBack").hidden) closeModal(); else if (state.selected) { state.selected = null; render(); } }
             else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && state.selected && !typing) {
@@ -1231,11 +1298,11 @@
             const rot = sd.rot180 ? ' style="transform: rotate(180deg)"' : "";
             if (sd.kind === "spread") {
                 const ox = (SW - 2 * W) / 2, oy = (SH - H) / 2;
-                const half = (p, x) => pageSvg(pageOf(p, false), W, H, `x="${x}" y="${oy}" width="${W}" height="${H}"`);
+                const half = (p, x, num) => pageSvg(pageOf(p, false, ctxFor(num - 1, layout.info)), W, H, `x="${x}" y="${oy}" width="${W}" height="${H}"`);
                 return `<div class="p"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SW} ${SH}" width="${SW}mm" height="${SH}mm"${rot}>`
-                    + `<rect width="${SW}" height="${SH}" fill="#fff"/>${half(sd.left, ox)}${half(sd.right, ox + W)}</svg></div>`;
+                    + `<rect width="${SW}" height="${SH}" fill="#fff"/>${half(sd.left, ox, sd.nums[0])}${half(sd.right, ox + W, sd.nums[1])}</svg></div>`;
             }
-            return `<div class="p"><div${rot}>${pageSvg(pageOf(sd.p, false), W, H, `width="${W}mm" height="${H}mm"`, sd.gutter)}</div></div>`;
+            return `<div class="p"><div${rot}>${pageSvg(pageOf(sd.p, false, sd.i != null ? ctxFor(sd.i, layout.info) : null), W, H, `width="${W}mm" height="${H}mm"`, sd.gutter)}</div></div>`;
         }).join("");
         return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Baskı</title><style>
             @page { size: ${SW}mm ${SH}mm; margin: 0; }
@@ -1466,6 +1533,7 @@
 
     function projectJson() {
         const used = new Set(state.blocks.filter((b) => b.kind === "img").map((b) => b.imageId));
+        state.blocks.forEach((b) => (b.layers || []).forEach((l) => { if (l.imageId) used.add(l.imageId); if (l.srcImageId) used.add(l.srcImageId); }));
         return JSON.stringify({
             app: "baski-masasi",
             version: 1,
@@ -1476,7 +1544,7 @@
             gutter: state.gutter,
             signature: state.signature,
             blocks: state.blocks,
-            images: [...images.values()].filter((im) => used.has(im.id) || images.size < 40),
+            images: [...images.values()].filter((im) => used.has(im.id) || (!im.hidden && images.size < 40)),
             pdfs: [...pdfs.values()].filter((d) => state.blocks.some((b) => b.kind === "pdf" && b.pdfId === d.id))
         });
     }
@@ -1699,6 +1767,76 @@
         render();
     }
 
+    /* ---------------- YAZI / LOGO ---------------- */
+
+    /* Kapaklar hariç tüm sayfalara bağlantılı sayfa numarası ekler */
+    function addPageNumbers() {
+        const targets = state.blocks.filter((b) => b.kind !== "img" && !/kapak/i.test(b.label || ""));
+        if (!targets.length) { toast("Önce sayfa ekleyin.", "warn"); return; }
+        commit();
+        const { W, H } = pageDims();
+        const outer = state.binding !== "top" && state.binding !== "none";
+        const link = uid();
+        const base = {
+            type: "text", role: "pagenum", text: "{s}", font: "arial", size: 10, color: "#555555", bold: false, italic: false,
+            align: outer ? "right" : "center", w: 24, x: outer ? W - 12 - 24 : (W - 24) / 2, y: H - 12, rot: 0, opacity: 1, mirror: outer, link
+        };
+        targets.forEach((b) => {
+            b.layers = (b.layers || []).filter((l) => l.role !== "pagenum");
+            b.layers.push(Object.assign({}, base, { id: uid() }));
+        });
+        render();
+        toast(`Sayfa numarası ${targets.length} karta eklendi (kapaklar hariç).`, "ok", 6000, [
+            { label: "Düzenle", run: () => openEditor(targets[0].id, { layerId: targets[0].layers[targets[0].layers.length - 1].id }) }
+        ]);
+    }
+
+    let editor = null;
+
+    function openEditor(blockId, opts) {
+        if (!editor) {
+            editor = window.BM_createEditor({
+                getBlock: (id) => state.blocks.find((b) => b.id === id),
+                blocks: () => state.blocks,
+                pageDims,
+                pageCount: (b) => blockPageIndexes(b).length,
+                blockName,
+                rangeText: (b) => rangeLabel(analyze().ranges.get(b.id)),
+                ctxForBlock: (b, back) => {
+                    const info = analyze();
+                    const idx = info.ranges.get(b.id) || [0];
+                    const want = back ? 1 : 0;
+                    const found = idx.find((k) => k % 2 === want);
+                    const i = found != null ? found : idx[0] + (back ? 1 : 0);
+                    return Object.assign(ctxFor(i, info), { gutter: gutterFor(i, info.duplex) });
+                },
+                basePage: (b) => blockContent(b, false),
+                resolveLayers,
+                mirrorPossible: () => state.binding !== "top" && (state.duplex || isBooklet()),
+                image: (id) => images.get(id),
+                imageName: (id) => (images.get(id) || {}).name,
+                libraryImages: () => [...images.values()].filter((im) => !im.hidden),
+                addImage: (rec) => { const id = uid(); images.set(id, Object.assign({ id }, rec)); return id; },
+                importFiles,
+                isolateFirst: (id) => {
+                    const b = state.blocks.find((x) => x.id === id);
+                    commit();
+                    const single = isolatePage(b, 0);
+                    render();
+                    return single.id;
+                },
+                commit,
+                changed: () => render(),
+                undo, redo, toast, openModal, closeModal, uid,
+                onClose: () => render()
+            });
+        }
+        if (preview && preview.isOpen()) preview.close();
+        state.selected = blockId;
+        render();
+        editor.open(blockId, opts);
+    }
+
     /* ---------------- DEFTER ÖNİZLEME ---------------- */
 
     let preview = null;
@@ -1707,7 +1845,8 @@
         if (!ensureLayout()) return;
         if (!preview) {
             preview = window.BM_createPreview({
-                analyze, pageDims, gutterFor, pageOf, pageSvg, blockName, bindIcon,
+                analyze, pageDims, gutterFor, pageOf, ctxFor, pageSvg, blockName, bindIcon,
+                editBlock: (id) => openEditor(id),
                 binding: () => state.binding,
                 bindingName: () => BINDINGS[state.binding].name,
                 presetsHtml: () => $("#presetTiles").innerHTML,
@@ -1739,6 +1878,9 @@
             el.appendChild(b);
         });
         $("#toasts").appendChild(el);
+        // Aynı anda en fazla 3 bildirim
+        const all = $("#toasts").children;
+        while (all.length > 3) all[0].remove();
         if (ms) setTimeout(() => el.remove(), ms);
         return el;
     }
@@ -1755,5 +1897,5 @@
     openBindingDialog({ first: true });
 
     // Testler ve hata ayıklama için
-    window.__bm = { state, images, pdfs, analyze, buildSides, printHtml, render, impose, openPreview };
+    window.__bm = { state, images, pdfs, analyze, buildSides, printHtml, render, impose, openPreview, openEditor, addPageNumbers };
 })();

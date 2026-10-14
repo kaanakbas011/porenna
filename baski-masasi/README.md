@@ -16,6 +16,14 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
 - **Defter görünümü (Önizle / Boşluk tuşu):** Defter, PDF'e çevrilmeden cilt türüne göre açılmış halde görünür: yandan spiralde yan yana, üstten spiralde alt alta, kitapçıkta ortadan katlanmış.
   Sayfalar animasyonla çevrilir (tıklayarak, ←/→ tuşlarıyla ya da kaydırma çubuğuyla). Alttaki şablon ve görsel şeritinden bir sayfanın üstüne sürüklenen öğe yalnızca o sayfayı değiştirir; 45 sayfalık kareli bloğun ortasındaki tek bir sayfa çizgili yapılabilir.
   ↻ düğmesi görsel ve PDF sayfalarını 90° döndürür.
+- **Yazı ve logo:** Bir sayfa kartına çift tıklayın, Enter'a basın ya da soldaki "Yazı ekle" / "Logo ekle" kutusunu kartın üstüne sürükleyin. Sayfa düzenleyici açılır.
+  - Yazı ve logo fareyle sürüklenir, köşesindeki noktadan büyütülür. Sayfanın ortasına yaklaşınca kendiliğinden ortaya oturur.
+  - **Ok tuşları** 1 mm kaydırır (Shift: 5 mm, Alt: 0,2 mm). Delete siler, Ctrl+D çoğaltır. Konum milimetre olarak da girilebilir, hizalama düğmeleri (sola, ortala, sağa, üste, alta) var.
+  - Yazı tipi, boyut, renk, kalın/italik, hizalama, döndürme ve saydamlık ayarlanır.
+  - **Logo için "Arkasını şeffaf yap":** Logonun etrafındaki düz renkli (genelde beyaz) zemin kaldırılır. Hassasiyet ayarlanabilir; "İç boşlukları da sil" seçeneği vardır; "Orijinale dön" ile geri alınır.
+  - **Diğer sayfalara uygula:** Öğe başka kartlara kopyalanır ("Tümü", "Kapaklar hariç", "Aynı türdekiler" ya da tek tek seçerek). Bağlantılı kopyalarda birinde yapılan değişiklik hepsine geçer.
+  - Bir karttaki öğe o karttaki tüm sayfalara (örneğin 45 kareli sayfanın hepsine) basılır. "Sadece ilk sayfa için ayır" ile tek sayfaya özel yapılabilir.
+  - Yazıda `{s}` sayfa numarasına, `{t}` toplam sayfa sayısına dönüşür. **"Sayfa numarası ekle"** tek tıkla kapaklar hariç tüm sayfalara numara koyar. Arka yüzlerde numara dış kenara geçer ("Arka yüzlerde sağ-sol yansıt").
 - **Temsili sayfa yerleri:** Açılışta "Ön kapak / İç sayfalar / Arka kapak" yerleri hazır gelir. Soldan şablon ya da görsel sürükleyip bu yerlere bırakın.
 - **Hazır şablonlar:** Boş, Kareli 5 mm, Kareli 1 cm, Çizgili 8 mm (sol kenar çizgili), Geniş çizgili, Noktalı, Milimetrik, Güzel yazı, Nota defteri, Cornell not.
   Aralık, renk, çizgi kalınlığı, kenar boşluğu ve "Ad Soyad / Tarih" satırı ayarlanabilir. Şablonlar vektör olarak üretildiği için baskıda keskin çıkar.
@@ -31,7 +39,7 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
   İsterseniz yazdırmadan önce PDF de kaydedilir.
 - **PDF kaydet:** Seçilen boyutta (A4, A5, B5, Letter; dikey ya da yatay) kenar boşluksuz PDF üretir.
 - **İşi kaydet / aç:** Hazırlanan düzen `.baski` dosyası olarak saklanır ve sonra tekrar açılabilir.
-- **Kısayollar:** Boşluk (defter görünümü), Ctrl+Z / Ctrl+Y (geri al / yinele), Ctrl+P (yazdır), Ctrl+S (PDF), Ctrl+D (çoğalt), Delete (sil), ←/→ (sayfalar arasında gezin).
+- **Kısayollar:** Boşluk (defter görünümü), Ctrl+Z / Ctrl+Y (geri al / yinele), Ctrl+P (yazdır), Ctrl+S (PDF), Ctrl+D (çoğalt), Enter (yazı/logo düzenle), Delete (sil), ←/→ (sayfalar arasında gezin).
 
 ## Çalıştırma (geliştirme)
 
@@ -65,6 +73,7 @@ npm run dist
 | `preload.js` | Arayüze güvenli masaüstü köprüsü (`window.desktop`) |
 | `renderer/index.html` | Ekran düzeni |
 | `renderer/app.js` | Sürükle-bırak, sayfa listesi, baskı planı, yazdırma akışı |
+| `renderer/editor.js` | Sayfa düzenleyici: yazı ve logo katmanları, şeffaf arka plan, diğer sayfalara uygulama |
 | `renderer/preview.js` | Defter görünümü: açılmış defter, sayfa çevirme, tek sayfa değiştirme |
 | `renderer/templates.js` | Kareli, çizgili vb. şablonların SVG üretimi |
 | `renderer/styles.css` | Görünüm |

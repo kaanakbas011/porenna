@@ -8,6 +8,14 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
 
 ## Neler yapılabilir?
 
+- **Cilt türü:** Yeni bir iş başlarken program defterin nasıl ciltleneceğini sorar. Seçime göre baskı yönü ve boşluklar kendiliğinden ayarlanır.
+  - *Yandan spiral:* Arka yüzler uzun kenardan çevrilir. Spiral payı ön yüzlerde solda, arka yüzlerde sağda bırakılır.
+  - *Üstten spiral:* Bloknot gibi yukarı açılır. Arka yüzler kısa kenardan çevrilir ki ters çıkmasın. Spiral payı ön yüzlerde üstte, arka yüzlerde altta bırakılır.
+  - *Kitapçık (ortadan zımba):* Bir kağıda yan yana 2 sayfa basılır (A5 kitapçık için A4, A4 kitapçık için A3 kağıt). Sayfa sırası otomatik dizilir (8 sayfada 8|1, 2|7, 6|3, 4|5). Sayfa sayısı 4'ün katına tamamlanır; boş sayfalar arka kapaktan önceye konur. Kalın kitapçıklar formalara bölünebilir.
+  - *Ciltsiz:* Sayfalar ayrı ayrı kullanılır.
+- **Defter görünümü (Önizle / Boşluk tuşu):** Defter, PDF'e çevrilmeden cilt türüne göre açılmış halde görünür: yandan spiralde yan yana, üstten spiralde alt alta, kitapçıkta ortadan katlanmış.
+  Sayfalar animasyonla çevrilir (tıklayarak, ←/→ tuşlarıyla ya da kaydırma çubuğuyla). Alttaki şablon ve görsel şeritinden bir sayfanın üstüne sürüklenen öğe yalnızca o sayfayı değiştirir; 45 sayfalık kareli bloğun ortasındaki tek bir sayfa çizgili yapılabilir.
+  ↻ düğmesi görsel ve PDF sayfalarını 90° döndürür.
 - **Temsili sayfa yerleri:** Açılışta "Ön kapak / İç sayfalar / Arka kapak" yerleri hazır gelir. Soldan şablon ya da görsel sürükleyip bu yerlere bırakın.
 - **Hazır şablonlar:** Boş, Kareli 5 mm, Kareli 1 cm, Çizgili 8 mm (sol kenar çizgili), Geniş çizgili, Noktalı, Milimetrik, Güzel yazı, Nota defteri, Cornell not.
   Aralık, renk, çizgi kalınlığı, kenar boşluğu ve "Ad Soyad / Tarih" satırı ayarlanabilir. Şablonlar vektör olarak üretildiği için baskıda keskin çıkar.
@@ -19,11 +27,11 @@ kendisi hesaplar. Sonra tek tuşla **PDF olarak kaydeder** ve **yazıcıya gönd
 - **Araya ekleme / sıralama:** Bir kartın ortasına bırakmak içeriğini değiştirir, kenarına bırakmak araya yeni sayfa ekler. Kartları sürükleyerek sıralayabilir, çöp alanına bırakarak silebilirsiniz.
 - **Baskı planı:** Toplam sayfa ve kağıt sayısını, her yaprağın ön ve arka yüzünü gösterir. Örneğin arka kapak son kağıdın ön yüzüne düşüyorsa uyarır ve tek tıkla düzeltir.
   "Bu sayfanın arkası boş kalsın" seçeneği kapakların arkasına otomatik boş sayfa koyar.
-- **Yazdırma:** Yazıcı seçimi, kopya sayısı, arkalı önlü (uzun ya da kısa kenar), tek yüz ve **elle arkalı önlü** (çift yüz basamayan yazıcılar için 2 turda, yönlendirmeli).
+- **Yazdırma:** Cilt türüne göre önerilen çevirme yönü işaretli gelir. Yazıcı seçimi, kopya sayısı, arkalı önlü (uzun ya da kısa kenar), tek yüz ve **elle arkalı önlü** (çift yüz basamayan yazıcılar için 2 turda, yönlendirmeli; üstten spiral ve kitapçıkta arka yüzler gerekiyorsa 180° çevrilir).
   İsterseniz yazdırmadan önce PDF de kaydedilir.
 - **PDF kaydet:** Seçilen boyutta (A4, A5, B5, Letter; dikey ya da yatay) kenar boşluksuz PDF üretir.
 - **İşi kaydet / aç:** Hazırlanan düzen `.baski` dosyası olarak saklanır ve sonra tekrar açılabilir.
-- **Kısayollar:** Ctrl+Z / Ctrl+Y (geri al / yinele), Ctrl+P (yazdır), Ctrl+S (PDF), Ctrl+D (çoğalt), Delete (sil), ←/→ (sayfalar arasında gezin).
+- **Kısayollar:** Boşluk (defter görünümü), Ctrl+Z / Ctrl+Y (geri al / yinele), Ctrl+P (yazdır), Ctrl+S (PDF), Ctrl+D (çoğalt), Delete (sil), ←/→ (sayfalar arasında gezin).
 
 ## Çalıştırma (geliştirme)
 
@@ -57,6 +65,7 @@ npm run dist
 | `preload.js` | Arayüze güvenli masaüstü köprüsü (`window.desktop`) |
 | `renderer/index.html` | Ekran düzeni |
 | `renderer/app.js` | Sürükle-bırak, sayfa listesi, baskı planı, yazdırma akışı |
+| `renderer/preview.js` | Defter görünümü: açılmış defter, sayfa çevirme, tek sayfa değiştirme |
 | `renderer/templates.js` | Kareli, çizgili vb. şablonların SVG üretimi |
 | `renderer/styles.css` | Görünüm |
 | `renderer/vendor/` | PDF okumak için [pdf.js](https://mozilla.github.io/pdf.js/) 3.11 (Apache 2.0). `npm run vendor` ile yeniden kopyalanır |

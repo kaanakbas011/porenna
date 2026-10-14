@@ -17,9 +17,30 @@
         pageSize: "A4",
         orient: "portrait",
         duplex: true,
+        binding: "side",   // side | top | booklet | none
+        gutter: 10,        // spiral payı (mm)
+        signature: 0,      // kitapçıkta forma başına kağıt (0 = tek forma)
         blocks: [],
         selected: null
     };
+
+    const BINDINGS = {
+        side: { name: "Yandan spiral", short: "Yandan spiral" },
+        top: { name: "Üstten spiral", short: "Üstten spiral" },
+        booklet: { name: "Kitapçık (ortadan zımba)", short: "Kitapçık" },
+        none: { name: "Ciltsiz / tek yaprak", short: "Ciltsiz" }
+    };
+
+    /* Kitapçıkta iki sayfanın yan yana basılacağı kağıt */
+    const BOOKLET_PAPER = {
+        A5: { w: 297, h: 210, label: "A4" },
+        A4: { w: 420, h: 297, label: "A3" },
+        B5: { w: 353, h: 250, label: "B4" },
+        Letter: { w: 431.8, h: 279.4, label: "Tabloid" }
+    };
+
+    const isBooklet = () => state.binding === "booklet";
+    const isSpiral = () => state.binding === "side" || state.binding === "top";
     const images = new Map(); // id -> { id, name, url, thumb, w, h }
     const pdfs = new Map(); // id -> { id, name, pages: [{ url, thumb, w, h }] }
 
@@ -38,7 +59,10 @@
     const redoStack = [];
 
     function snapshot() {
-        return JSON.stringify({ pageSize: state.pageSize, orient: state.orient, duplex: state.duplex, blocks: state.blocks });
+        return JSON.stringify({
+            pageSize: state.pageSize, orient: state.orient, duplex: state.duplex,
+            binding: state.binding, gutter: state.gutter, signature: state.signature, blocks: state.blocks
+        });
     }
 
     function restore(snap) {
@@ -72,7 +96,8 @@
 
     function pageDims() {
         const p = PAGE_SIZES[state.pageSize];
-        return state.orient === "landscape" ? { W: p.h, H: p.w } : { W: p.w, H: p.h };
+        // Kitapçık sayfaları her zaman dikeydir
+        return state.orient === "landscape" && !isBooklet() ? { W: p.h, H: p.w } : { W: p.w, H: p.h };
     }
 
     function blockName(b) {
@@ -98,13 +123,13 @@
         if (b.kind === "tpl") return { kind: "tpl", tpl: b.tpl, opts: b.opts };
         if (b.kind === "img") {
             const im = images.get(b.imageId);
-            return { kind: "img", image: im ? (useThumb ? im.thumb : im.url) : null, fit: b.fit };
+            return { kind: "img", image: im ? (useThumb ? im.thumb : im.url) : null, fit: b.fit, turn: b.turn };
         }
         if (b.kind === "pdf") {
             const doc = pdfs.get(b.pdfId);
             const pg = doc && doc.pages[pi != null ? pi : b.from - 1];
             if (!pg) return { kind: "blank" };
-            return { kind: "img", image: useThumb ? pg.thumb : pg.url, fit: b.fit, rotate: b.rotate, w: pg.w, h: pg.h };
+            return { kind: "img", image: useThumb ? pg.thumb : pg.url, fit: b.fit, rotate: b.rotate, turn: b.turn, w: pg.w, h: pg.h, inset: true };
         }
         return { kind: "blank" };
     }
@@ -139,7 +164,7 @@
 
     function applyContent(b, content) {
         delete b.tpl; delete b.presetKey; delete b.opts; delete b.imageId; delete b.fit;
-        delete b.pdfId; delete b.from; delete b.to; delete b.rotate;
+        delete b.pdfId; delete b.from; delete b.to; delete b.rotate; delete b.turn;
         Object.assign(b, content);
     }
 
@@ -159,24 +184,38 @@
        sayfa eklenir. */
     function flatten(duplex) {
         const pages = [];
-        const ranges = new Map();
         for (const b of state.blocks) {
-            const start = pages.length;
-            for (const pi of blockPageIndexes(b)) {
+            blockPageIndexes(b).forEach((pi, occ) => {
                 if (duplex && b.backBlank && pages.length % 2 === 1) pages.push({ auto: true });
-                pages.push({ block: b, pi });
+                pages.push({ block: b, pi, occ });
                 if (duplex && b.backBlank) pages.push({ auto: true });
-            }
-            const realIdx = [];
-            pages.forEach((p, i) => { if (i >= start && p.block === b) realIdx.push(i); });
-            ranges.set(b.id, realIdx);
+            });
         }
-        return { pages, ranges };
+        return pages;
     }
 
+    const isCoverish = (p) => p && p.block && (p.block.kind === "img" || /arka/i.test(p.block.label || ""));
+
     function analyze() {
-        const { pages, ranges } = flatten(state.duplex);
+        const booklet = isBooklet();
+        const duplex = booklet || state.duplex;
+        const pages = flatten(duplex);
         const warnings = [];
+        let pad = 0;
+        if (booklet && pages.length) {
+            // Kitapçıkta sayfa sayısı 4'ün katı olmalı; boşlukları arka kapaktan önceye koy
+            pad = (4 - (pages.length % 4)) % 4;
+            const blanks = Array.from({ length: pad }, () => ({ auto: true, pad: true }));
+            if (pages.length > 1 && isCoverish(pages[pages.length - 1])) pages.splice(pages.length - 1, 0, ...blanks);
+            else pages.push(...blanks);
+            if (pad) warnings.push({ level: "info", text: `Kitapçık için sayfa sayısı 4'ün katı olmalı: ${pad} boş sayfa otomatik eklendi${isCoverish(pages[pages.length - 1]) ? " (arka kapaktan önce)" : ""}.` });
+        }
+        const ranges = new Map();
+        pages.forEach((p, i) => {
+            if (!p.block) return;
+            if (!ranges.has(p.block.id)) ranges.set(p.block.id, []);
+            ranges.get(p.block.id).push(i);
+        });
         const empties = state.blocks.filter((b) => b.kind === "empty");
         if (empties.length) {
             warnings.push({
@@ -185,10 +224,9 @@
                 fix: empties.length ? { label: "İlk boş yeri seç", action: () => select(empties[0].id) } : null
             });
         }
-        if (state.duplex && pages.length > 1) {
-            const last = pages[pages.length - 1];
-            const lastIsCoverish = last.block && (last.block.kind === "img" || /arka/i.test(last.block.label || ""));
-            if (pages.length % 2 === 1) {
+        if (duplex && pages.length > 1) {
+            const lastIsCoverish = isCoverish(pages[pages.length - 1]);
+            if (!booklet && pages.length % 2 === 1) {
                 if (lastIsCoverish) {
                     warnings.push({
                         level: "error",
@@ -208,7 +246,60 @@
                 });
             }
         }
-        return { pages, ranges, warnings };
+        return { pages, ranges, warnings, duplex, booklet, pad };
+    }
+
+    /* Spiral payı hangi kenarda: ön yüzde cilt tarafı, arka yüzde tam tersi */
+    function gutterFor(i, duplex) {
+        if (!isSpiral() || !(state.gutter > 0)) return null;
+        const back = duplex && i % 2 === 1;
+        if (state.binding === "side") return { side: back ? "right" : "left", size: state.gutter };
+        return { side: back ? "bottom" : "top", size: state.gutter };
+    }
+
+    function pageOf(p, useThumb) {
+        return p && p.block ? blockPage(p.block, useThumb, p.pi) : { kind: "blank" };
+    }
+
+    /* Kitapçık dizgisi: her kağıdın ön ve arka yüzüne ikişer sayfa.
+       8 sayfa için: 1. kağıt ön 8|1, arka 2|7 — 2. kağıt ön 6|3, arka 4|5 */
+    function impose(pages) {
+        const sides = [];
+        const per = state.signature > 0 ? state.signature * 4 : pages.length;
+        let forma = 0;
+        for (let start = 0; start < pages.length; start += per, forma++) {
+            const chunk = pages.slice(start, start + per);
+            const n = chunk.length;
+            for (let s = 0; s < n / 4; s++) {
+                const no = (i) => start + i + 1;
+                sides.push({ kind: "spread", forma, left: chunk[n - 1 - 2 * s], right: chunk[2 * s], nums: [no(n - 1 - 2 * s), no(2 * s)] });
+                sides.push({ kind: "spread", forma, left: chunk[2 * s + 1], right: chunk[n - 2 - 2 * s], nums: [no(2 * s + 1), no(n - 2 - 2 * s)] });
+            }
+        }
+        return sides;
+    }
+
+    /* Kağıda basılacak fiziksel yüzler ve kağıt boyu */
+    function buildSides(info) {
+        const { W, H } = pageDims();
+        if (info.booklet) {
+            const paper = BOOKLET_PAPER[state.pageSize];
+            return { W, H, SW: Math.max(2 * W, paper.w), SH: Math.max(H, paper.h), sides: impose(info.pages) };
+        }
+        return {
+            W, H, SW: W, SH: H,
+            sides: info.pages.map((p, i) => ({ kind: "page", p, gutter: gutterFor(i, info.duplex) }))
+        };
+    }
+
+    /* Önerilen arkalı önlü çevirme yönü (kağıdın yönüne göre) */
+    function recommendedMode() {
+        const { SW, SH } = buildSides({ pages: [], booklet: isBooklet() });
+        const portraitSheet = SH >= SW;
+        if (isBooklet()) return "shortEdge"; // yatay kağıt, katlama yeri kısa kenar ortasında
+        if (state.binding === "top") return portraitSheet ? "shortEdge" : "longEdge";
+        if (state.binding === "side") return portraitSheet ? "longEdge" : "shortEdge";
+        return state.duplex ? (portraitSheet ? "longEdge" : "shortEdge") : "simplex";
     }
 
     function insertBlankBeforeLast() {
@@ -223,6 +314,7 @@
     /* ---------------- RENDER ---------------- */
 
     function render() {
+        if (preview && preview.isOpen()) preview.refresh();
         renderTop();
         renderLibraryImages();
         const info = analyze();
@@ -233,7 +325,11 @@
 
     function renderTop() {
         $("#pageSize").value = state.pageSize;
-        document.querySelectorAll("#orient button").forEach((b) => b.classList.toggle("on", b.dataset.v === state.orient));
+        document.querySelectorAll("#orient button").forEach((b) => {
+            b.classList.toggle("on", b.dataset.v === (isBooklet() ? "portrait" : state.orient));
+            b.disabled = isBooklet();
+        });
+        $("#bindBtn").innerHTML = `${bindIcon(state.binding, 18)} <span>${BINDINGS[state.binding].short}</span>`;
         $("#undoBtn").disabled = !undoStack.length;
         $("#redoBtn").disabled = !redoStack.length;
     }
@@ -243,14 +339,17 @@
         return pageSvg(page, W, H, 'preserveAspectRatio="xMidYMid meet"');
     }
 
+    let rangeDuplex = true;
+
     function rangeLabel(idx) {
         if (!idx || !idx.length) return "";
-        const side = (i) => (state.duplex ? (i % 2 === 0 ? " · ön" : " · arka") : "");
+        const side = (i) => (rangeDuplex ? (i % 2 === 0 ? " · ön" : " · arka") : "");
         if (idx.length === 1) return `s. ${idx[0] + 1}${side(idx[0])}`;
         return `s. ${idx[0] + 1}–${idx[idx.length - 1] + 1}`;
     }
 
     function renderBoard(info) {
+        rangeDuplex = info.duplex && !info.booklet;
         const { W, H } = pageDims();
         const board = $("#board");
         board.style.setProperty("--ratio", `${W} / ${H}`);
@@ -290,9 +389,10 @@
         </div>`;
         board.innerHTML = html;
 
-        const sheets = info.pages.length;
-        const paper = state.duplex ? Math.ceil(sheets / 2) : sheets;
-        $("#boardStats").innerHTML = `<b>${sheets}</b> sayfa <span class="dot">•</span> <b>${paper}</b> yaprak kağıt <span class="dot">•</span> ${state.duplex ? "arkalı önlü" : "tek yüz"}`;
+        const n = info.pages.length;
+        const paper = info.booklet ? n / 4 : info.duplex ? Math.ceil(n / 2) : n;
+        const kind = info.booklet ? `kitapçık (${BOOKLET_PAPER[state.pageSize].label} kağıda)` : info.duplex ? "arkalı önlü" : "tek yüz";
+        $("#boardStats").innerHTML = `<b>${n}</b> sayfa <span class="dot">•</span> <b>${paper}</b> kağıt <span class="dot">•</span> ${kind}`;
     }
 
     function renderLibraryImages() {
@@ -438,6 +538,7 @@
 
         h += `<div class="actions">
             <button class="btn" data-act="dup">⧉ Çoğalt</button>
+            ${b.kind === "img" || b.kind === "pdf" ? '<button class="btn" data-act="turn" title="İçeriği 90° döndür">↻ Döndür</button>' : ""}
             ${b.kind !== "empty" ? '<button class="btn" data-act="clear">Boş yere çevir</button>' : ""}
             <button class="btn danger" data-act="delete">Sil</button>
         </div>`;
@@ -451,15 +552,55 @@
         const { pages, warnings } = info;
         const el = $("#plan");
         const total = pages.length;
-        const sheetsCount = state.duplex ? Math.ceil(total / 2) : total;
+        const duplex = info.duplex;
+        const sheetsCount = info.booklet ? total / 4 : duplex ? Math.ceil(total / 2) : total;
 
         const nameOf = (p) => (!p ? "—" : p.auto ? "boş (otomatik)" : p.block.kind === "empty" ? "boş yer" : (p.block.label ? p.block.label + " · " : "") + blockName(p.block));
+        const bindRow = `<div class="bind-row">${bindIcon(state.binding, 22)}<div><b>${BINDINGS[state.binding].name}</b>
+            <small>${state.binding === "side" ? "Arka yüzler uzun kenardan çevrilir" : state.binding === "top" ? "Arka yüzler yukarı (kısa kenardan) çevrilir" : state.binding === "booklet" ? `${BOOKLET_PAPER[state.pageSize].label} kağıda ikişer sayfa, ortadan katla ve zımbala` : "Sayfalar ayrı kullanılır"}${isSpiral() && state.gutter > 0 ? ` · spiral payı ${state.gutter} mm` : ""}</small></div>
+            <button class="btn small" data-bind-open>Değiştir</button></div>`;
+
+        if (info.booklet) {
+            const { sides } = buildSides(info);
+            let h = `<h3>Baskı planı</h3>${bindRow}
+                <div class="stats">
+                    <div><b>${total}</b><span>sayfa (A5 vb.)</span></div>
+                    <div><b>${sheetsCount}</b><span>${BOOKLET_PAPER[state.pageSize].label} kağıt</span></div>
+                </div>
+                <label class="field">Forma <small>(kalın kitapçıklar katlanabilsin diye gruplara böler)</small>
+                    <select data-signature>${[0, 3, 4, 5, 6, 8, 10].map((k) => `<option value="${k}" ${state.signature === k ? "selected" : ""}>${k ? `${k} kağıtlık formalar (${k * 4} sayfa)` : "Tek forma (hepsi iç içe)"}</option>`).join("")}</select>
+                </label>`;
+            if (warnings.length) {
+                h += `<div class="warnings">${warnings.map((w, i) => `
+                    <div class="warning ${w.level}"><span>${esc(w.text)}</span>
+                    ${w.fix ? `<button class="btn small" data-fix="${i}">${esc(w.fix.label)}</button>` : ""}</div>`).join("")}</div>`;
+            }
+            h += `<div class="sheets">`;
+            if (!total) h += `<p class="muted">Henüz sayfa yok.</p>`;
+            let lastForma = -1;
+            for (let i = 0; i < sides.length; i += 2) {
+                const f = sides[i], b = sides[i + 1];
+                if (state.signature > 0 && f.forma !== lastForma) {
+                    h += `<div class="forma-title">${f.forma + 1}. forma</div>`;
+                    lastForma = f.forma;
+                }
+                const cell = (sd) => `<span class="imp" title="${esc(nameOf(sd.left))} | ${esc(nameOf(sd.right))}"><i class="${sd.left.auto ? "auto" : ""}">${sd.nums[0]}</i><i class="${sd.right.auto ? "auto" : ""}">${sd.nums[1]}</i></span>`;
+                h += `<div class="sheet-row booklet">
+                    <div class="sheet-no">Kağıt ${i / 2 + 1}</div>
+                    <div class="sheet-sides"><div class="side-chip"><em>Ön</em>${cell(f)}</div><div class="side-chip"><em>Arka</em>${cell(b)}</div></div>
+                </div>`;
+            }
+            h += `</div><p class="hint" style="margin-top:8px">Kağıtları sırayla üst üste koyup ortadan katlayın; 1. kağıt en dışta kalır.</p>`;
+            el.innerHTML = h;
+            el._warnings = warnings;
+            return;
+        }
         const keyOf = (p) => (!p ? "-" : p.auto ? "auto" : p.block.id);
 
         // Yaprakları ardışık aynı olanları gruplayarak listele
         const sheets = [];
-        for (let i = 0; i < total; i += state.duplex ? 2 : 1) {
-            sheets.push({ front: pages[i], back: state.duplex ? pages[i + 1] : undefined });
+        for (let i = 0; i < total; i += duplex ? 2 : 1) {
+            sheets.push({ front: pages[i], back: duplex ? pages[i + 1] : undefined });
         }
         const runs = [];
         sheets.forEach((s, i) => {
@@ -469,7 +610,7 @@
             else runs.push({ key, from: i, to: i, s });
         });
 
-        let h = `<h3>Baskı planı</h3>
+        let h = `<h3>Baskı planı</h3>${bindRow}
             <div class="seg wide" id="duplexSeg">
                 <button data-duplex="0" class="${!state.duplex ? "on" : ""}">Tek yüz</button>
                 <button data-duplex="1" class="${state.duplex ? "on" : ""}">Arkalı önlü</button>
@@ -477,7 +618,9 @@
             <div class="stats">
                 <div><b>${total}</b><span>sayfa</span></div>
                 <div><b>${sheetsCount}</b><span>yaprak kağıt</span></div>
-            </div>`;
+            </div>
+            ${isSpiral() ? `<label class="field inline-num">Spiral payı <small>(delik tarafında boşluk)</small>
+                <span><input type="number" min="0" max="25" step="1" data-gutter value="${state.gutter}"> mm</span></label>` : ""}`;
 
         if (warnings.length) {
             h += `<div class="warnings">${warnings.map((w, i) => `
@@ -495,8 +638,8 @@
             h += `<div class="sheet-row">
                 <div class="sheet-no">${label}${n > 1 ? `<small>${n} kağıt</small>` : ""}</div>
                 <div class="sheet-sides">
-                    <div class="side-chip ${r.s.front && r.s.front.auto ? "auto" : ""}"><em>${state.duplex ? "Ön" : "Sayfa"}</em>${esc(nameOf(r.s.front))}</div>
-                    ${state.duplex ? `<div class="side-chip ${!r.s.back || r.s.back.auto ? "auto" : ""}"><em>Arka</em>${esc(nameOf(r.s.back))}</div>` : ""}
+                    <div class="side-chip ${r.s.front && r.s.front.auto ? "auto" : ""}"><em>${duplex ? "Ön" : "Sayfa"}</em>${esc(nameOf(r.s.front))}</div>
+                    ${duplex ? `<div class="side-chip ${!r.s.back || r.s.back.auto ? "auto" : ""}"><em>Arka</em>${esc(nameOf(r.s.back))}</div>` : ""}
                 </div>
             </div>`;
         });
@@ -926,7 +1069,7 @@
     function setupEvents() {
         // Sayfa boyutu
         $("#pageSize").innerHTML = Object.entries(PAGE_SIZES).map(([k, p]) =>
-            `<option value="${k}">${p.label} (${p.w}×${p.h} mm)</option>`).join("");
+            `<option value="${k}">${p.label} · ${p.w}×${p.h}</option>`).join("");
         $("#pageSize").addEventListener("change", (e) => { commit(); state.pageSize = e.target.value; render(); });
         $("#orient").addEventListener("click", (e) => {
             const v = e.target.closest("button")?.dataset.v;
@@ -940,6 +1083,7 @@
             commit();
             defaultDoc();
             render();
+            openBindingDialog({ first: true });
         });
         $("#saveProjBtn").addEventListener("click", saveProject);
         $("#openBtn").addEventListener("click", openProject);
@@ -1025,6 +1169,7 @@
             else if (btn.dataset.act === "dup") duplicateBlock(b.id);
             else if (btn.dataset.act === "delete") deleteBlock(b.id);
             else if (btn.dataset.act === "split") splitPdfBlock(b.id);
+            else if (btn.dataset.act === "turn") { commit(); b.turn = ((b.turn || 0) + 90) % 360; render(); }
             else if (btn.dataset.act === "allpages") { commit(); b.from = 1; b.to = pdfs.get(b.pdfId).pages.length; render(); }
             else if (btn.dataset.act === "clear") { commit(); applyContent(b, { kind: "empty" }); render(); }
         });
@@ -1037,6 +1182,7 @@
                 if (v !== state.duplex) { commit(); state.duplex = v; render(); }
                 return;
             }
+            if (e.target.closest("[data-bind-open]")) { openBindingDialog(); return; }
             const f = e.target.closest("[data-fix]");
             if (f) {
                 const w = $("#plan")._warnings[+f.dataset.fix];
@@ -1044,14 +1190,27 @@
             }
         });
 
+        $("#plan").addEventListener("change", (e) => {
+            if (e.target.matches("[data-signature]")) { commit(); state.signature = +e.target.value; render(); }
+            if (e.target.matches("[data-gutter]")) {
+                const v = Math.max(0, Math.min(25, Math.round(+e.target.value || 0)));
+                commit(); state.gutter = v; render();
+            }
+        });
+
+        $("#bindBtn").addEventListener("click", () => openBindingDialog());
+        $("#previewBtn").addEventListener("click", () => openPreview());
+
         // Klavye
         document.addEventListener("keydown", (e) => {
+            if (preview && preview.isOpen()) return; // önizleme kendi tuşlarını yönetir
             const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
             const mod = e.ctrlKey || e.metaKey;
             if (mod && e.key.toLowerCase() === "z" && !e.shiftKey && !typing) { e.preventDefault(); undo(); }
             else if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) && !typing) { e.preventDefault(); redo(); }
             else if (mod && e.key.toLowerCase() === "p") { e.preventDefault(); openPrintDialog(); }
             else if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); savePdf(); }
+            else if (e.key === " " && !typing && $("#modalBack").hidden) { e.preventDefault(); openPreview(); }
             else if (mod && e.key.toLowerCase() === "d" && state.selected && !typing) { e.preventDefault(); duplicateBlock(state.selected); }
             else if ((e.key === "Delete" || e.key === "Backspace") && state.selected && !typing) { e.preventDefault(); deleteBlock(state.selected); }
             else if (e.key === "Escape") { if (!$("#modalBack").hidden) closeModal(); else if (state.selected) { state.selected = null; render(); } }
@@ -1065,25 +1224,31 @@
 
     /* ---------------- PDF / YAZDIRMA ---------------- */
 
-    function printHtml(pageList) {
-        const { W, H } = pageDims();
-        const body = pageList.map((p) => {
-            const page = p && p.block ? blockPage(p.block, false, p.pi) : { kind: "blank" };
-            return `<div class="p">${pageSvg(page, W, H, `width="${W}mm" height="${H}mm"`)}</div>`;
+    /* Fiziksel yüzleri yazdırılabilir HTML'e çevirir */
+    function printHtml(layout, sides) {
+        const { W, H, SW, SH } = layout;
+        const body = (sides || layout.sides).map((sd) => {
+            const rot = sd.rot180 ? ' style="transform: rotate(180deg)"' : "";
+            if (sd.kind === "spread") {
+                const ox = (SW - 2 * W) / 2, oy = (SH - H) / 2;
+                const half = (p, x) => pageSvg(pageOf(p, false), W, H, `x="${x}" y="${oy}" width="${W}" height="${H}"`);
+                return `<div class="p"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SW} ${SH}" width="${SW}mm" height="${SH}mm"${rot}>`
+                    + `<rect width="${SW}" height="${SH}" fill="#fff"/>${half(sd.left, ox)}${half(sd.right, ox + W)}</svg></div>`;
+            }
+            return `<div class="p"><div${rot}>${pageSvg(pageOf(sd.p, false), W, H, `width="${W}mm" height="${H}mm"`, sd.gutter)}</div></div>`;
         }).join("");
         return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Baskı</title><style>
-            @page { size: ${W}mm ${H}mm; margin: 0; }
+            @page { size: ${SW}mm ${SH}mm; margin: 0; }
             html, body { margin: 0; padding: 0; background: #fff; }
-            .p { width: ${W}mm; height: ${H}mm; overflow: hidden; break-after: page; page-break-after: always; }
+            .p { width: ${SW}mm; height: ${SH}mm; overflow: hidden; break-after: page; page-break-after: always; }
             .p:last-child { break-after: auto; page-break-after: auto; }
             svg { display: block; }
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         </style></head><body>${body}</body></html>`;
     }
 
-    function jobMeta() {
-        const { W, H } = pageDims();
-        return { widthMm: W, heightMm: H, landscape: state.orient === "landscape" };
+    function jobMeta(layout) {
+        return { widthMm: layout.SW, heightMm: layout.SH, landscape: layout.SW > layout.SH };
     }
 
     function defaultFileName() {
@@ -1092,13 +1257,14 @@
         return `baski-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
     }
 
-    function ensurePages() {
-        const { pages } = analyze();
-        if (!pages.length) {
+    /* Basılacak düzeni hazırlar; sayfa yoksa uyarır */
+    function ensureLayout() {
+        const info = analyze();
+        if (!info.pages.length) {
             toast("Önce en az bir sayfa ekleyin.", "warn");
             return null;
         }
-        return pages;
+        return buildSides(info);
     }
 
     /* Tarayıcıda (masaüstü uygulaması dışında) gizli iframe ile yazdır */
@@ -1119,9 +1285,9 @@
     }
 
     async function savePdf(silentAfter) {
-        const pages = ensurePages();
-        if (!pages) return null;
-        const html = printHtml(pages);
+        const layout = ensureLayout();
+        if (!layout) return null;
+        const html = printHtml(layout);
         if (!desktop) {
             toast("Tarayıcı modunda: yazdırma penceresinde hedef olarak “PDF olarak kaydet”i seçin.");
             await browserPrint(html);
@@ -1129,11 +1295,11 @@
         }
         const busy = toast("PDF hazırlanıyor…", "info", 0);
         try {
-            const res = await desktop.savePdf({ html, defaultName: defaultFileName() + ".pdf", ...jobMeta() });
+            const res = await desktop.savePdf({ html, defaultName: defaultFileName() + (isBooklet() ? "-kitapcik" : "") + ".pdf", ...jobMeta(layout) });
             busy.remove();
             if (res && res.path) {
                 if (!silentAfter) {
-                    toast(`PDF kaydedildi (${pages.length} sayfa).`, "ok", 7000, [
+                    toast(`PDF kaydedildi (${layout.sides.length} sayfa${isBooklet() ? ", kitapçık dizgisiyle" : ""}).`, "ok", 7000, [
                         { label: "Aç", run: () => desktop.openPath(res.path) },
                         { label: "Klasörde göster", run: () => desktop.showInFolder(res.path) }
                     ]);
@@ -1160,23 +1326,25 @@
     function closeModal() {
         $("#modalBack").hidden = true;
         $("#modal").innerHTML = "";
+        $("#modal").onclick = null;
+        $("#modal").onchange = null;
     }
 
     async function openPrintDialog() {
-        const pages = ensurePages();
-        if (!pages) return;
+        if (!ensureLayout()) return;
         let printers = [];
         if (desktop) {
             try { printers = await desktop.getPrinters(); } catch (e) { printers = []; }
         }
-        const landscape = state.orient === "landscape";
+        const rec = recommendedMode();
+        const recTag = `<span class="rec">Önerilen · ${BINDINGS[state.binding].short}</span>`;
         const modes = [
-            { v: "longEdge", t: "Arkalı önlü — uzun kenardan çevir", d: landscape ? "Yatay sayfada bloknot gibi çevrilir" : "Kitap/defter gibi çevrilir (önerilen)" },
-            { v: "shortEdge", t: "Arkalı önlü — kısa kenardan çevir", d: landscape ? "Yatay sayfada kitap gibi çevrilir (önerilen)" : "Bloknot/takvim gibi yukarı çevrilir" },
+            { v: "longEdge", t: "Arkalı önlü — uzun kenardan çevir", d: "Kağıt uzun kenarı etrafında çevrilir" },
+            { v: "shortEdge", t: "Arkalı önlü — kısa kenardan çevir", d: "Kağıt kısa kenarı etrafında çevrilir" },
             { v: "manual", t: "Elle arkalı önlü", d: "Yazıcı çift yüz basamıyorsa: önce tekler, sonra kağıdı çevirip çiftler" },
-            { v: "simplex", t: "Tek yüz", d: "Her sayfa ayrı kağıda" }
+            { v: "simplex", t: "Tek yüz", d: isBooklet() ? "Kitapçık için uygun değil" : "Her sayfa ayrı kağıda" }
         ];
-        const def = state.duplex ? (landscape ? "shortEdge" : "longEdge") : "simplex";
+        const def = rec;
 
         openModal(`
             <h2>Yazdır</h2>
@@ -1188,7 +1356,7 @@
                 <div class="field">Baskı şekli
                     <div class="radios">${modes.map((m) => `
                         <label class="radio"><input type="radio" name="pMode" value="${m.v}" ${m.v === def ? "checked" : ""}>
-                        <span><b>${m.t}</b><small>${m.d}</small></span></label>`).join("")}
+                        <span><b>${m.t} ${m.v === rec ? recTag : ""}</b><small>${m.d}</small></span></label>`).join("")}
                     </div>
                 </div>
                 <div class="row2">
@@ -1205,14 +1373,16 @@
         const updateSummary = () => {
             const mode = document.querySelector('input[name="pMode"]:checked').value;
             const duplex = mode !== "simplex";
-            if (duplex !== state.duplex) { commit(); state.duplex = duplex; render(); }
-            const { pages: pg } = analyze();
+            if (!isBooklet() && duplex !== state.duplex) { commit(); state.duplex = duplex; render(); }
+            const { sides } = buildSides(analyze());
             const copies = Math.max(1, +$("#pCopies").value || 1);
-            const sheets = (duplex ? Math.ceil(pg.length / 2) : pg.length) * copies;
-            $("#pSummary").innerHTML = `<b>${pg.length}</b> sayfa × <b>${copies}</b> kopya → toplam <b>${sheets}</b> yaprak kağıt`
-                + (mode === "manual" ? `<br><small>2 tur: önce ${Math.ceil(pg.length / 2)} tek sayfa, sonra kağıtları çevirip ${Math.floor(pg.length / 2)} çift sayfa.</small>` : "");
+            const sheets = (duplex ? Math.ceil(sides.length / 2) : sides.length) * copies;
+            $("#pSummary").innerHTML = `<b>${sides.length}</b> baskı yüzü × <b>${copies}</b> kopya → toplam <b>${sheets}</b> kağıt`
+                + (isBooklet() ? ` <small>(${BOOKLET_PAPER[state.pageSize].label})</small>` : "")
+                + (mode !== rec && mode !== "manual" && rec !== "simplex" ? `<br><small class="warn-text">Bu cilt için önerilen: ${modes.find((m) => m.v === rec).t}. Aksi halde arka yüzler ters çıkabilir.</small>` : "")
+                + (mode === "manual" ? `<br><small>2 tur: önce ${Math.ceil(sides.length / 2)} ön yüz, sonra kağıtları çevirip ${Math.floor(sides.length / 2)} arka yüz.</small>` : "");
         };
-        $("#modal").addEventListener("change", updateSummary);
+        $("#modal").onchange = updateSummary;
         $("#pCopies").addEventListener("input", updateSummary);
         updateSummary();
 
@@ -1228,17 +1398,18 @@
                 if (!p) return;
                 toast("PDF kaydedildi, yazdırılıyor…", "ok");
             }
-            if (mode === "manual") manualDuplex(deviceName, copies);
-            else runPrint(analyze().pages, { duplexMode: mode, copies, deviceName });
+            const layout = buildSides(analyze());
+            if (mode === "manual") manualDuplex(layout, deviceName, copies);
+            else runPrint(layout, layout.sides, { duplexMode: mode, copies, deviceName });
         };
     }
 
-    async function runPrint(pageList, opts) {
-        const html = printHtml(pageList);
+    async function runPrint(layout, sides, opts) {
+        const html = printHtml(layout, sides);
         if (!desktop) return browserPrint(html);
         const busy = toast("Yazıcıya gönderiliyor…", "info", 0);
         try {
-            const res = await desktop.print({ html, ...jobMeta(), ...opts });
+            const res = await desktop.print({ html, ...jobMeta(layout), ...opts });
             busy.remove();
             if (res && res.success) toast("Yazıcıya gönderildi.", "ok");
             else if (res && res.failureReason && !/cancel/i.test(res.failureReason)) toast("Yazdırılamadı: " + res.failureReason, "error");
@@ -1252,15 +1423,16 @@
 
     /* Yazıcı çift yüz desteklemiyorsa: önce tek numaralı sayfalar,
        sonra kağıt çevrilip çift numaralı sayfalar basılır. */
-    async function manualDuplex(deviceName, copies) {
-        const pages = analyze().pages;
-        const odd = pages.filter((_, i) => i % 2 === 0);
-        const even = pages.filter((_, i) => i % 2 === 1);
-        while (even.length < odd.length) even.push({ auto: true }); // son kağıdın arkası boş
+    async function manualDuplex(layout, deviceName, copies) {
+        const sides = layout.sides;
+        const odd = sides.filter((_, i) => i % 2 === 0);
+        const even = sides.filter((_, i) => i % 2 === 1);
+        while (even.length < odd.length) even.push({ kind: "page", p: { auto: true } }); // son kağıdın arkası boş
+        const rotDefault = recommendedMode() === "shortEdge";
 
         const all = [];
         for (let c = 0; c < copies; c++) all.push(...odd);
-        const res = await runPrint(all, { duplexMode: "simplex", copies: 1, deviceName });
+        const res = await runPrint(layout, all, { duplexMode: "simplex", copies: 1, deviceName });
         if (desktop && (!res || !res.success)) return;
 
         openModal(`
@@ -1271,20 +1443,22 @@
                     <li>Basılı yüz <b>yukarı</b> bakacak, sayfanın <b>üst kenarı</b> yazıcıya ilk girecek şekilde besleme tepsisine koyun. <small>(Yazıcınıza göre değişebilir; emin değilseniz önce tek bir kağıtla deneyin.)</small></li>
                     <li>Aşağıdaki düğmeye basın.</li>
                 </ol>
-                <label class="check"><input type="checkbox" id="mReverse"> <span>Çift sayfaları <b>ters sırada</b> bas <small>(kağıtlar yüzü yukarı çıkan yazıcılar için)</small></span></label>
+                <label class="check"><input type="checkbox" id="mReverse"> <span>Arka yüzleri <b>ters sırada</b> bas <small>(kağıtlar yüzü yukarı çıkan yazıcılar için)</small></span></label>
+                <label class="check"><input type="checkbox" id="mRotate" ${rotDefault ? "checked" : ""}> <span>Arka yüzleri <b>180° çevir</b> <small>(${BINDINGS[state.binding].short} için ${rotDefault ? "genelde gerekir" : "genelde gerekmez"}; ilk kağıtla kontrol edin)</small></span></label>
             </div>
             <div class="modal-foot">
                 <button class="btn" data-close>Vazgeç</button>
-                <button class="btn primary" id="mGo">2. turu yazdır (${even.length * copies} sayfa)</button>
+                <button class="btn primary" id="mGo">2. turu yazdır (${even.length * copies} yüz)</button>
             </div>`);
         $("#modal").querySelector("[data-close]").onclick = closeModal;
         $("#mGo").onclick = () => {
             const reverse = $("#mReverse").checked;
+            const rot = $("#mRotate").checked;
             closeModal();
             let list = [];
-            for (let c = 0; c < copies; c++) list.push(...even);
+            for (let c = 0; c < copies; c++) list.push(...even.map((sd) => (rot ? { ...sd, rot180: true } : sd)));
             if (reverse) list = list.reverse();
-            runPrint(list, { duplexMode: "simplex", copies: 1, deviceName });
+            runPrint(layout, list, { duplexMode: "simplex", copies: 1, deviceName });
         };
     }
 
@@ -1298,6 +1472,9 @@
             pageSize: state.pageSize,
             orient: state.orient,
             duplex: state.duplex,
+            binding: state.binding,
+            gutter: state.gutter,
+            signature: state.signature,
             blocks: state.blocks,
             images: [...images.values()].filter((im) => used.has(im.id) || images.size < 40),
             pdfs: [...pdfs.values()].filter((d) => state.blocks.some((b) => b.kind === "pdf" && b.pdfId === d.id))
@@ -1334,6 +1511,9 @@
         state.pageSize = PAGE_SIZES[data.pageSize] ? data.pageSize : "A4";
         state.orient = data.orient === "landscape" ? "landscape" : "portrait";
         state.duplex = data.duplex !== false;
+        state.binding = BINDINGS[data.binding] ? data.binding : "side";
+        state.gutter = data.gutter != null ? +data.gutter : 10;
+        state.signature = data.signature | 0;
         state.blocks = data.blocks;
         state.selected = null;
         render();
@@ -1353,6 +1533,196 @@
             if (inp.files[0]) loadProject(await inp.files[0].text());
         };
         inp.click();
+    }
+
+    /* ---------------- CİLT SEÇİMİ ---------------- */
+
+    function bindIcon(kind, size) {
+        const z = size || 40;
+        const rings = (pts) => pts.map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(w, h) / 2}" fill="none" stroke="currentColor" stroke-width="1.6"/>`).join("");
+        let body = "";
+        if (kind === "side") {
+            body = `<rect x="11" y="5" width="24" height="30" rx="2" fill="#fff" stroke="currentColor" stroke-width="1.6"/>`
+                + rings([8, 13, 18, 23, 28].map((y) => [7, y - 1.5, 8, 3]));
+        } else if (kind === "top") {
+            body = `<rect x="7" y="10" width="26" height="26" rx="2" fill="#fff" stroke="currentColor" stroke-width="1.6"/>`
+                + rings([11, 16, 21, 26].map((x) => [x - 1.5, 6, 3, 8]));
+        } else if (kind === "booklet") {
+            body = `<path d="M20 9 L5 6 V32 L20 35 Z M20 9 L35 6 V32 L20 35 Z" fill="#fff" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>`
+                + `<path d="M20 15v3M20 25v3" stroke="currentColor" stroke-width="2.4"/>`;
+        } else {
+            body = `<rect x="13" y="8" width="20" height="27" rx="2" fill="#fff" stroke="currentColor" stroke-width="1.4" opacity=".6"/>`
+                + `<rect x="8" y="5" width="20" height="27" rx="2" fill="#fff" stroke="currentColor" stroke-width="1.6"/>`;
+        }
+        return `<svg class="bind-ico" viewBox="0 0 40 40" width="${z}" height="${z}" aria-hidden="true">${body}</svg>`;
+    }
+
+    /* İş başında ve "Değiştir" ile açılır: cilt türüne göre kağıt yönü,
+       arkalı önlü çevirme ve spiral payı ayarlanır. */
+    function openBindingDialog(opts) {
+        const first = opts && opts.first;
+        let choice = state.binding;
+        const descs = {
+            side: "Kitap gibi sağa-sola açılır. Arka yüzler uzun kenardan çevrilir, spiral tarafında boşluk bırakılır.",
+            top: "Bloknot/takvim gibi yukarı açılır. Arka yüzler kısa kenardan çevrilir ki ters çıkmasın.",
+            booklet: "Bir kağıda yan yana 2 sayfa basılır, kağıtlar ortadan katlanıp zımbalanır. Sayfa sırası otomatik dizilir.",
+            none: "Sayfalar ayrı ayrı kullanılır (föy, test, tek yaprak)."
+        };
+
+        const optionsHtml = () => {
+            if (choice === "booklet") {
+                const size = BOOKLET_PAPER[state.pageSize] && isBooklet() ? state.pageSize : "A5";
+                return `<label class="field">Kitapçık boyu
+                    <select id="bSize">${Object.entries(BOOKLET_PAPER).map(([k, p]) =>
+                        `<option value="${k}" ${k === size ? "selected" : ""}>${PAGE_SIZES[k].label} kitapçık → ${p.label} kağıda basılır</option>`).join("")}</select></label>
+                    <label class="field">Forma
+                    <select id="bSig">${[0, 3, 4, 5, 6, 8].map((k) => `<option value="${k}" ${state.signature === k ? "selected" : ""}>${k ? `${k} kağıtlık formalar (kalın kitapçık)` : "Tek forma (ince kitapçık, hepsi iç içe)"}</option>`).join("")}</select></label>`;
+            }
+            const size = isBooklet() && state.pageSize === "A5" ? "A4" : state.pageSize;
+            return `<div class="row2b">
+                <label class="field">Kağıt
+                    <select id="bSize">${Object.entries(PAGE_SIZES).map(([k, p]) => `<option value="${k}" ${k === size ? "selected" : ""}>${p.label}</option>`).join("")}</select></label>
+                <div class="field">Sayfa yönü
+                    <div class="seg" id="bOrient">
+                        <button data-v="portrait" class="${state.orient === "portrait" || isBooklet() ? "on" : ""}">▯ Dikey</button>
+                        <button data-v="landscape" class="${state.orient === "landscape" && !isBooklet() ? "on" : ""}">▭ Yatay</button>
+                    </div></div>
+                ${choice === "side" || choice === "top" ? `<label class="field">Spiral payı
+                    <span class="inline-num"><input type="number" id="bGutter" min="0" max="25" value="${isSpiral() ? state.gutter : 10}"> mm</span></label>` : ""}
+                </div>
+                ${choice === "side" || choice === "top" ? `<p class="note">Spiral payı: ${choice === "side" ? "ön yüzlerde solda, arka yüzlerde sağda" : "ön yüzlerde üstte, arka yüzlerde altta"} çizgi/yazı basılmayan boşluk. Delikler sayfa içeriğini kesmez.</p>` : ""}`;
+        };
+
+        const draw = () => {
+            $("#modal").innerHTML = `
+                <h2>${first ? "Yeni iş: defter nasıl ciltlenecek?" : "Cilt türü"}</h2>
+                <div class="modal-body">
+                    <div class="bind-grid">${Object.keys(BINDINGS).map((k) => `
+                        <button class="bind-card ${k === choice ? "on" : ""}" data-bind="${k}">
+                            ${bindIcon(k, 44)}
+                            <b>${BINDINGS[k].name}</b>
+                            <small>${descs[k]}</small>
+                        </button>`).join("")}
+                    </div>
+                    <div class="bind-opts">${optionsHtml()}</div>
+                    ${first ? '<p class="hint">Bunu daha sonra üst çubuktaki cilt düğmesinden değiştirebilirsiniz.</p>' : ""}
+                </div>
+                <div class="modal-foot">
+                    ${first ? "" : '<button class="btn" data-close>İptal</button>'}
+                    <button class="btn primary" id="bOk">Tamam</button>
+                </div>`;
+        };
+
+        $("#modalBack").hidden = false;
+        draw();
+        const modal = $("#modal");
+        modal.onclick = (e) => {
+            const card = e.target.closest("[data-bind]");
+            if (card) { choice = card.dataset.bind; draw(); return; }
+            const o = e.target.closest("#bOrient button");
+            if (o) { modal.querySelectorAll("#bOrient button").forEach((b) => b.classList.toggle("on", b === o)); return; }
+            if (e.target.closest("[data-close]")) { closeModal(); return; }
+            if (e.target.closest("#bOk")) {
+                commit();
+                const prev = state.binding;
+                state.binding = choice;
+                state.pageSize = $("#bSize").value;
+                if (choice === "booklet") {
+                    state.signature = +$("#bSig").value;
+                } else {
+                    const on = modal.querySelector("#bOrient button.on");
+                    state.orient = on ? on.dataset.v : "portrait";
+                    if (choice !== "none") state.duplex = true;
+                    const g = modal.querySelector("#bGutter");
+                    if (g) state.gutter = Math.max(0, Math.min(25, Math.round(+g.value || 0)));
+                }
+                closeModal();
+                modal.onclick = null;
+                render();
+                if (prev !== choice) toast(`Cilt: ${BINDINGS[choice].name}. Baskı ayarları buna göre düzenlendi.`, "ok");
+            }
+        };
+    }
+
+    /* ---------------- TEK SAYFAYI DEĞİŞTİRME (önizlemeden) ---------------- */
+
+    /* Çok sayfalık bir bloğun occ'uncu sayfasını ayrı bloğa ayırır */
+    function isolatePage(b, occ) {
+        const L = blockPageIndexes(b);
+        if (L.length <= 1) return b;
+        const i = indexOf(b.id);
+        const mk = (extra, keepLabel) => Object.assign(clone(b), { id: uid(), label: keepLabel || b.kind === "empty" ? b.label : "" }, extra);
+        let before, single, after;
+        if (b.kind === "pdf") {
+            const toBlocks = (seq) => {
+                const runs = [];
+                seq.forEach((pi) => {
+                    const r = runs[runs.length - 1];
+                    if (r && pi === r.to) r.to = pi + 1; else runs.push({ from: pi + 1, to: pi + 1 });
+                });
+                return runs.map((r) => mk({ from: r.from, to: r.to, count: 1 }));
+            };
+            before = toBlocks(L.slice(0, occ));
+            single = mk({ from: L[occ] + 1, to: L[occ] + 1, count: 1 });
+            after = toBlocks(L.slice(occ + 1));
+        } else {
+            before = occ > 0 ? [mk({ count: occ })] : [];
+            single = mk({ count: 1 });
+            after = L.length - occ - 1 > 0 ? [mk({ count: L.length - occ - 1 })] : [];
+        }
+        const parts = [...before, single, ...after];
+        parts[0].label = b.label;
+        state.blocks.splice(i, 1, ...parts);
+        return single;
+    }
+
+    function replacePage(p, payload) {
+        if (!p || !p.block) {
+            toast("Bu sayfa otomatik eklenen bir boşluk; değiştirmek için sayfalar listesinden sayfa ekleyin.", "warn");
+            return;
+        }
+        commit();
+        const single = isolatePage(p.block, p.occ);
+        applyContent(single, contentFromPayload(payload));
+        render();
+        toast("Sadece bu sayfa değiştirildi.", "ok");
+    }
+
+    function rotatePage(p) {
+        if (!p || !p.block || (p.block.kind !== "img" && p.block.kind !== "pdf")) {
+            toast("Döndürme görsel ve PDF sayfaları içindir. Şablonlar için kağıt yönünü değiştirin.", "warn");
+            return;
+        }
+        commit();
+        const single = isolatePage(p.block, p.occ);
+        single.turn = ((single.turn || 0) + 90) % 360;
+        render();
+    }
+
+    /* ---------------- DEFTER ÖNİZLEME ---------------- */
+
+    let preview = null;
+
+    function openPreview() {
+        if (!ensureLayout()) return;
+        if (!preview) {
+            preview = window.BM_createPreview({
+                analyze, pageDims, gutterFor, pageOf, pageSvg, blockName, bindIcon,
+                binding: () => state.binding,
+                bindingName: () => BINDINGS[state.binding].name,
+                presetsHtml: () => $("#presetTiles").innerHTML,
+                imagesHtml: () => $("#imageTiles").innerHTML,
+                getDrag: () => drag,
+                endDrag,
+                importFiles,
+                replacePage,
+                rotatePage,
+                openBinding: () => openBindingDialog(),
+                showBlock: (id) => select(id),
+                undo, redo
+            });
+        }
+        preview.open();
     }
 
     /* ---------------- BİLDİRİMLER ---------------- */
@@ -1382,7 +1752,8 @@
     setupDnD();
     defaultDoc();
     render();
+    openBindingDialog({ first: true });
 
     // Testler ve hata ayıklama için
-    window.__bm = { state, images, pdfs, analyze, printHtml, render };
+    window.__bm = { state, images, pdfs, analyze, buildSides, printHtml, render, impose, openPreview };
 })();

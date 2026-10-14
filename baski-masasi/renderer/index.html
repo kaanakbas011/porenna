@@ -17,9 +17,8 @@
     </div>
 
     <div class="top-group">
-        <label class="field-inline">
-            Kağıt
-            <select id="pageSize"></select>
+        <label class="field-inline" title="Sayfa boyutu">
+            <select id="pageSize" aria-label="Sayfa boyutu"></select>
         </label>
         <div class="seg" id="orient">
             <button data-v="portrait" title="Dikey">▯ Dikey</button>
@@ -28,8 +27,13 @@
     </div>
 
     <div class="top-group">
-        <button class="btn ghost" id="undoBtn" title="Geri al (Ctrl+Z)">↶ Geri al</button>
-        <button class="btn ghost" id="redoBtn" title="Yinele (Ctrl+Y)">↷ Yinele</button>
+        <button class="btn bind-btn" id="bindBtn" title="Cilt türü: spiral, kitapçık…"></button>
+        <button class="btn" id="previewBtn" title="Defteri açılmış halde gör (Boşluk tuşu)">📖 Önizle</button>
+    </div>
+
+    <div class="top-group">
+        <button class="btn ghost" id="undoBtn" title="Geri al (Ctrl+Z)" aria-label="Geri al">↶</button>
+        <button class="btn ghost" id="redoBtn" title="Yinele (Ctrl+Y)" aria-label="Yinele">↷</button>
     </div>
 
     <div class="top-group">
@@ -98,6 +102,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script src="templates.js"></script>
+<script src="preview.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

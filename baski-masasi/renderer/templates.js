@@ -184,21 +184,42 @@ function templateInner(tpl, W, H, o) {
     return out;
 }
 
-/* Bir sayfayı tam SVG olarak üretir.
-   page: { kind: 'tpl'|'img'|'blank', tpl, opts, image: {url}, fit } */
-function pageSvg(page, W, H, extraAttrs) {
-    let inner = "";
-    if (page.kind === "tpl") {
-        inner = templateInner(page.tpl, W, H, page.opts);
-    } else if (page.kind === "img" && page.image) {
-        const par = page.fit === "contain" ? "xMidYMid meet" : page.fit === "stretch" ? "none" : "xMidYMid slice";
-        // Yatay kaynak dikey kağıda (veya tersi) gelirse 90° döndür
-        if (page.rotate && page.w && page.h && (page.w > page.h) !== (W > H)) {
-            inner = `<g transform="translate(${W} 0) rotate(90)"><image href="${page.image}" x="0" y="0" width="${H}" height="${W}" preserveAspectRatio="${par}"/></g>`;
-        } else {
-            inner = `<image href="${page.image}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="${par}"/>`;
-        }
+/* Görseli W×H kutusuna, istenen açıyla (0/90/180/270) yerleştirir */
+function imageInner(page, W, H) {
+    const par = page.fit === "contain" ? "xMidYMid meet" : page.fit === "stretch" ? "none" : "xMidYMid slice";
+    let r = (((page.turn || 0) % 360) + 360) % 360;
+    // Yatay kaynak dikey kağıda (veya tersi) gelirse ek olarak 90° döndür
+    if (page.rotate && page.w && page.h) {
+        const landscapeSrc = r % 180 ? page.h > page.w : page.w > page.h;
+        if (landscapeSrc !== (W > H)) r = (r + 90) % 360;
     }
+    const sideways = r % 180 !== 0;
+    const bw = sideways ? H : W;
+    const bh = sideways ? W : H;
+    const tr = { 0: "", 90: `translate(${W} 0) rotate(90)`, 180: `translate(${W} ${H}) rotate(180)`, 270: `translate(0 ${H}) rotate(270)` }[r];
+    const img = `<image href="${page.image}" x="0" y="0" width="${bw}" height="${bh}" preserveAspectRatio="${par}"/>`;
+    return tr ? `<g transform="${tr}">${img}</g>` : img;
+}
+
+/* Bir sayfayı tam SVG olarak üretir.
+   page:   { kind: 'tpl'|'img'|'blank', tpl, opts, image, fit, turn, rotate, w, h, inset }
+   gutter: { side: 'left'|'right'|'top'|'bottom', size } — spiral payı.
+           Şablonlar ve PDF sayfaları bu payın dışına yerleşir; kapak
+           görselleri (inset olmayan) kağıdı kenardan kenara doldurur. */
+function pageSvg(page, W, H, extraAttrs, gutter) {
+    let x = 0, y = 0, cw = W, ch = H;
+    const useGutter = gutter && gutter.size > 0 && (page.kind === "tpl" || page.inset);
+    if (useGutter) {
+        const g = Math.min(gutter.size, Math.min(W, H) / 3);
+        if (gutter.side === "left") { x = g; cw -= g; }
+        if (gutter.side === "right") { cw -= g; }
+        if (gutter.side === "top") { y = g; ch -= g; }
+        if (gutter.side === "bottom") { ch -= g; }
+    }
+    let inner = "";
+    if (page.kind === "tpl") inner = templateInner(page.tpl, cw, ch, page.opts);
+    else if (page.kind === "img" && page.image) inner = imageInner(page, cw, ch);
+    if (inner && useGutter) inner = `<svg x="${r2(x)}" y="${r2(y)}" width="${r2(cw)}" height="${r2(ch)}" viewBox="0 0 ${r2(cw)} ${r2(ch)}">${inner}</svg>`;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${extraAttrs || ""}>`
         + `<rect width="${W}" height="${H}" fill="#fff"/>${inner}</svg>`;
 }

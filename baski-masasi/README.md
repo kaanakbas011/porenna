@@ -56,11 +56,11 @@ Bu modda PDF ve yazdırma işlemi tarayıcının yazdırma penceresi üzerinden 
 
 ## Windows kurulum dosyası
 
-Kırtasiyeye gönderilecek dosya **`BaskiMasasi-Kurulum-1.0.0.exe`**. Programın çalışması için gereken her şey bu dosyanın içindedir; karşı bilgisayara Node.js veya başka bir şey kurmak gerekmez.
+Kırtasiyeye gönderilecek dosya **`BaskiMasasi-Kurulum-1.1.0.exe`**. Programın çalışması için gereken her şey bu dosyanın içindedir; karşı bilgisayara Node.js veya başka bir şey kurmak gerekmez.
 
 - **Kurulum:** Çift tıklanınca soru sormadan kurulur ve program açılır. Yönetici izni istemez. Masaüstüne ve Başlat menüsüne "Baskı Masası" kısayolu ekler. Kaldırmak için Ayarlar → Uygulamalar menüsü kullanılır.
-- **`BaskiMasasi-Tasinabilir-1.0.0.exe`:** Kurulum yapmadan doğrudan çalışır (USB bellekten de olur).
-- **Gereken sistem:** Windows 10 veya 11, 64 bit. Windows 7/8'de çalışmaz.
+- **`BaskiMasasi-Tasinabilir-1.1.0.exe`:** Kurulum yapmadan doğrudan çalışır (USB bellekten de olur).
+- **Gereken sistem:** Windows 7 (SP1), 8, 8.1, 10 ve 11; 32 ve 64 bit. Tek dosya hepsinde çalışır, kurulum bilgisayara uygun olanı (32/64 bit) kendisi seçer. Bunun için program Electron 22 üzerine kuruludur; Windows 7/8'i destekleyen son sürüm budur. Program internete bağlanmadığı ve yalnızca kendi dosyalarını açtığı için eski sürüm güvenlik açısından sorun oluşturmaz. Windows XP ve Vista desteklenmez.
 - **İlk açılışta "Windows bilgisayarınızı korudu" uyarısı:** Program dijital imzalı olmadığı için çıkar. **Ek bilgi → Yine de çalıştır** ile açılır.
 
 ### Exe dosyasını üretmek

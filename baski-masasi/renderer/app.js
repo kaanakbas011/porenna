@@ -1307,7 +1307,8 @@
         return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Baskı</title><style>
             @page { size: ${SW}mm ${SH}mm; margin: 0; }
             html, body { margin: 0; padding: 0; background: #fff; }
-            .p { width: ${SW}mm; height: ${SH}mm; overflow: hidden; break-after: page; page-break-after: always; }
+            /* Yükseklikten 1px eksik: eski Chromium sürümleri yuvarlama yüzünden sona boş sayfa eklemesin */
+            .p { width: ${SW}mm; height: calc(${SH}mm - 1px); overflow: hidden; break-after: page; page-break-after: always; break-inside: avoid; }
             .p:last-child { break-after: auto; page-break-after: auto; }
             svg { display: block; }
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

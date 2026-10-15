@@ -5,6 +5,9 @@
 (() => {
     const { PAGE_SIZES, COLORS, WEIGHTS, TEMPLATE_TYPES, PRESETS, pageSvg, marginsOf } = window.BM_TEMPLATES;
     const desktop = window.desktop || null; // Electron köprüsü (tarayıcıda yok)
+    // Claude içindeki deneme sürümü: yazdırma, dosya indirme ve onay pencereleri yok
+    const ARTIFACT = !!window.BM_ARTIFACT;
+    const DESKTOP_ONLY = "Bu deneme sürümünde PDF kaydetme, yazdırma ve iş kaydetme yok. Bunlar Windows uygulamasında çalışır.";
 
     const $ = (sel) => document.querySelector(sel);
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -901,8 +904,9 @@
 
     function loadPdfJs() {
         if (!pdfjsReady) {
-            pdfjsReady = loadScript("vendor/pdf.min.js").then(() => {
-                window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+            const base = ARTIFACT ? "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/" : "vendor/";
+            pdfjsReady = loadScript(base + "pdf.min.js").then(() => {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.js";
                 return window.pdfjsLib;
             });
             pdfjsReady.catch(() => { pdfjsReady = null; });
@@ -932,9 +936,11 @@
             const doc = await lib.getDocument({
                 data,
                 isEvalSupported: false,
-                cMapUrl: base + "vendor/cmaps/",
-                cMapPacked: true,
-                standardFontDataUrl: base + "vendor/standard_fonts/"
+                ...(ARTIFACT ? {} : {
+                    cMapUrl: base + "vendor/cmaps/",
+                    cMapPacked: true,
+                    standardFontDataUrl: base + "vendor/standard_fonts/"
+                })
             }).promise;
             const pages = [];
             const canvas = document.createElement("canvas");
@@ -1160,10 +1166,11 @@
         $("#undoBtn").addEventListener("click", undo);
         $("#redoBtn").addEventListener("click", redo);
         $("#newBtn").addEventListener("click", () => {
-            if (!confirm("Mevcut iş temizlensin mi? (Geri al ile dönebilirsiniz)")) return;
+            if (!ARTIFACT && !confirm("Mevcut iş temizlensin mi? (Geri al ile dönebilirsiniz)")) return;
             commit();
             defaultDoc();
             render();
+            if (ARTIFACT) toast("Yeni iş açıldı. Önceki işe dönmek için Geri al'a basın.");
             openBindingDialog({ first: true });
         });
         $("#saveProjBtn").addEventListener("click", saveProject);
@@ -1419,6 +1426,7 @@
     }
 
     async function savePdf(silentAfter) {
+        if (ARTIFACT) { toast(DESKTOP_ONLY, "warn", 6000); return null; }
         const layout = ensureLayout();
         if (!layout) return null;
         const html = printHtml(layout);
@@ -1465,6 +1473,7 @@
     }
 
     async function openPrintDialog() {
+        if (ARTIFACT) { toast(DESKTOP_ONLY, "warn", 6000); return; }
         if (!ensureLayout()) return;
         let printers = [];
         if (desktop) {
@@ -1618,6 +1627,7 @@
     }
 
     async function saveProject() {
+        if (ARTIFACT) { toast(DESKTOP_ONLY, "warn", 6000); return; }
         const json = projectJson();
         const name = defaultFileName() + ".baski";
         if (desktop) {
@@ -1999,6 +2009,11 @@
     setupEvents();
     setupDnD();
     defaultDoc();
+    if (ARTIFACT) {
+        // Deneme sürümü boş açılmasın: örnek olarak 20 kareli sayfa
+        applyContent(state.blocks[1], { kind: "tpl", tpl: "grid", presetKey: "grid5", opts: clone(PRESETS.find((p) => p.key === "grid5").opts) });
+        state.blocks[1].count = 20;
+    }
     render();
     openBindingDialog({ first: true });
 

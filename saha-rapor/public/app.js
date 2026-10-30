@@ -299,7 +299,7 @@
       ${statsHtml}
       <div class="search">${ICONS.search}<input type="search" id="q" placeholder="Başlık, müşteri, adres${isM ? ', teknisyen' : ''} ara…" value="${esc(p.q || '')}"></div>
       <div class="tabs">${tabs.map(([v, t]) => `<button class="${p.status === v ? 'active' : ''}" data-s="${v}">${t}${v === 'gonderildi' && isM ? `<span class="n">${stats.gonderildi}</span>` : ''}</button>`).join('')}</div>
-      <div class="list" id="list">${reports.length ? reports.map(reportItem).join('') : `<div class="empty"><div class="big">📭</div>${isM ? 'Bu kategoride rapor yok.' : 'Henüz rapor yok. Sağ üstten yeni rapor oluşturun.'}</div>`}</div>
+      <div class="list" id="list">${reports.length ? reports.map(reportItem).join('') : `<div class="empty"><div class="big">📭</div>${isM ? 'Bu kategoride rapor yok.' : 'Henüz rapor yok.<br><a class="btn accent mt" href="#/yeni">Nasıl başlayacağını bir bakışta gör ›</a>'}</div>`}</div>
       ${isM && topTech.length ? `<div class="section-title">Son 30 gün · teknisyen bazında</div><div class="card"><table class="tbl">${topTech.map((t) => `<tr><td>${esc(t.name)}</td><td style="text-align:right"><b>${t.c}</b> rapor</td></tr>`).join('')}</table></div>` : ''}
     `, 'home');
     updateBadge();
@@ -308,29 +308,144 @@
     $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { p.q = e.target.value; render().then(() => { const i = $('#q'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 350); };
   }
 
-  /* ---------------- Yeni rapor: şablon seçimi ---------------- */
+  /* ---------------- Yeni rapor: "Nasıl başlamak istersin?" ---------------- */
+  const PATHS = [
+    { k: 'hazir', n: 1, short: 'Hazır şablon', color: '#f59e0b', title: 'Hazır şablonla başla', tag: 'Önerilen · en hızlı',
+      who: 'Standart işler: kurulum, arıza, bakım, pano, ölçüm…', time: '≈ 5 dk',
+      steps: ['Şablon seç', 'Alanları doldur', 'Fotoğraf / video ekle', 'Müdüre gönder'],
+      cta: 'Şablon seç', act: 'scroll' },
+    { k: 'uyarla', n: 2, short: 'Şablonu uyarla', color: '#2563eb', title: 'Şablonu kopyala, kendine uyarla', tag: 'Alan ekle / çıkar',
+      who: 'Hazır şablon yakın ama bir-iki alan eksik ya da fazla.', time: '≈ 10 dk (bir kez)',
+      steps: ['Şablon seç', 'Alanları değiştir', 'Kişisel şablon olarak kaydet', 'Doldur ve gönder'],
+      cta: 'Kopyalanacak şablonu seç', act: 'scroll-copy' },
+    { k: 'kendi', n: 3, short: 'Kendi şablonun', color: '#7c3aed', title: 'Kendi şablonunu yaz', tag: 'Sıfırdan form',
+      who: 'Sık yaptığın özel bir iş var; hiçbir hazır şablon uymuyor.', time: '≈ 15 dk (bir kez)',
+      steps: ['Alanları kur', 'Şablonu kaydet', 'Doldur ve gönder'],
+      cta: 'Şablon kurucuyu aç', act: 'link', href: '#/sablonlar/yeni' },
+    { k: 'bos', n: 4, short: 'Boş rapor', color: '#64748b', title: 'Boş rapor', tag: 'Sadece not + fotoğraf',
+      who: 'Kısa iş; birkaç satır açıklama ve fotoğraf yeterli.', time: '≈ 2 dk',
+      steps: ['Başlık ve not yaz', 'Fotoğraf / video ekle', 'Müdüre gönder'],
+      cta: 'Boş başla', act: 'blank' },
+  ];
+
+  function flowSvg() {
+    // Masaüstü için yatay akış haritası: 4 başlangıç yolu ortak hatta birleşir.
+    const W = 118, H = 40, COL = 148, X0 = 44, ROW = 60, Y0 = 16;
+    const yRow = (i) => Y0 + i * ROW;
+    const yMid = Y0 + 1.5 * ROW;
+    const col = (c) => X0 + c * COL;
+    const nodes = [];
+    const links = [];
+    const node = (x, y, label, opt = {}) => { nodes.push({ x, y, label, ...opt }); return { x, y }; };
+    const link = (a, b, color, dashed = false) => links.push({ a, b, color, dashed });
+    const common = {};
+    common.doldur = node(col(3.3), yMid, 'Alanları doldur', { dark: true });
+    common.foto = node(col(4.3), yMid, 'Fotoğraf / video', { dark: true });
+    common.gonder = node(col(5.3), yMid, 'Müdüre gönder', { dark: true, accent: true });
+    common.incele = node(col(6.3), yMid, 'Müdür inceler', { dark: true });
+    common.onay = node(col(7.3), yMid - 34, 'Onaylandı ✓', { ok: true });
+    common.rev = node(col(7.3), yMid + 34, 'Revizyon ↩', { rev: true });
+    link(common.doldur, common.foto, 'var(--muted)'); link(common.foto, common.gonder, 'var(--muted)');
+    link(common.gonder, common.incele, 'var(--muted)'); link(common.incele, common.onay, '#16a34a'); link(common.incele, common.rev, '#dc2626');
+    const rowSteps = [
+      [['Şablon seç']],
+      [['Şablon seç'], ['Alanları değiştir']],
+      [['Alanları kur'], ['Şablonu kaydet']],
+      [],
+    ];
+    PATHS.forEach((p, i) => {
+      let prev = node(col(0), yRow(i), p.short, { start: true, color: p.color, n: p.n });
+      rowSteps[i].forEach(([label], j) => { const nx = node(col(j + 1), yRow(i), label, { color: p.color }); link(prev, nx, p.color); prev = nx; });
+      link(prev, common.doldur, p.color);
+    });
+    const path = (a, b) => { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2; const dx = Math.max(30, (x2 - x1) / 2); return `M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`; };
+    // Revizyon → geri dönüş (kesikli)
+    const rx = common.rev.x + W / 2, ry = common.rev.y + H, dy = yRow(3) + H + 26;
+    const back = `M${rx} ${ry} L${rx} ${dy} L${common.doldur.x + W / 2} ${dy} L${common.doldur.x + W / 2} ${common.doldur.y + H}`;
+    const totalW = col(7.3) + W + 8, totalH = dy + 22;
+    return `<svg class="flow" viewBox="0 0 ${totalW} ${totalH}" role="img" aria-label="Rapor akış haritası">
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/></marker></defs>
+      ${links.map((l) => `<path d="${path(l.a, l.b)}" fill="none" stroke="${l.color}" stroke-width="2.2" marker-end="url(#arr)" opacity=".9"/>`).join('')}
+      <path d="${back}" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+      <text x="${(rx + common.doldur.x + W / 2) / 2}" y="${dy - 6}" text-anchor="middle" font-size="11" fill="#dc2626">revizyon notuyla sana geri döner → düzelt, tekrar gönder</text>
+      ${nodes.map((nd) => {
+        const fill = nd.dark ? (nd.accent ? 'var(--accent)' : 'var(--text)') : nd.ok ? '#16a34a' : nd.rev ? '#dc2626' : 'var(--surface)';
+        const txt = nd.dark ? (nd.accent ? 'var(--accent-text)' : 'var(--bg)') : (nd.ok || nd.rev) ? '#fff' : 'var(--text)';
+        const stroke = nd.color || (nd.dark || nd.ok || nd.rev ? 'none' : 'var(--border)');
+        return `<g><rect x="${nd.x}" y="${nd.y}" width="${W}" height="${H}" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="${nd.start ? 2.5 : 1.5}"/>
+          ${nd.start ? `<circle cx="${nd.x - 16}" cy="${nd.y + H / 2}" r="11" fill="${nd.color}"/><text x="${nd.x - 16}" y="${nd.y + H / 2 + 4}" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">${nd.n}</text>` : ''}
+          <text x="${nd.x + W / 2}" y="${nd.y + H / 2 + 4.5}" text-anchor="middle" font-size="12.5" font-weight="${nd.start || nd.dark ? 700 : 500}" fill="${txt}">${esc(nd.label)}</text></g>`;
+      }).join('')}
+    </svg>`;
+  }
+
   async function viewNew() {
     const { templates } = await api('GET', '/api/templates');
     const cats = [...new Set(templates.map((t) => t.category || 'Diğer'))];
     shell(`
-      <div class="page-head"><h1>Yeni Rapor</h1></div>
-      <p class="muted mb">Bir şablon seçin. Rapor içinde alanları değiştirebilir, isterseniz sıfırdan da yazabilirsiniz.</p>
-      ${cats.map((c) => `<div class="section-title">${esc(c)}</div><div class="tpl-grid">${templates.filter((t) => (t.category || 'Diğer') === c).map((t) => `
-        <div class="tpl">
-          <div class="t"><span>${esc(t.name)}</span>${t.owner_id ? '<span class="chip neutral">Kişisel</span>' : ''}</div>
-          <div class="d">${esc(t.description)}</div>
-          <div class="small muted">${t.fields.filter((f) => f.type !== 'section').length} alan</div>
-          <div class="actions"><button class="btn sm accent" data-use="${t.id}">Bu şablonla başla</button></div>
-        </div>`).join('')}</div>`).join('')}
-      <div class="section-title">Sıfırdan</div>
-      <div class="tpl"><div class="t">Boş rapor</div><div class="d">Hiç alan olmadan başlayın; alanları kendiniz ekleyin ya da sadece not ve fotoğraf kullanın.</div><div class="actions"><button class="btn sm ghost" data-use="">Boş başla</button></div></div>
+      <div class="page-head"><h1>Nasıl başlamak istersin?</h1></div>
+      <p class="muted mb">Dört yol var. Hangisini seçersen seç, rapor sonunda <b>müdürün ekranına düşer</b>; onaylanır ya da bir notla sana geri gelir. Taslaklar otomatik kaydedilir, yarım bırakıp sonra devam edebilirsin.</p>
+
+      <div class="card flow-card">
+        <div class="row between mb"><h3>Akış haritası</h3><span class="small muted">Numaralar aşağıdaki seçeneklerle aynı</span></div>
+        ${flowSvg()}
+        <div class="common-strip">
+          <span class="muted small">Ortak son:</span>
+          <span class="step dark">Alanları doldur</span><span class="arr">→</span>
+          <span class="step dark">Fotoğraf / video</span><span class="arr">→</span>
+          <span class="step accent">Müdüre gönder</span><span class="arr">→</span>
+          <span class="step dark">Müdür inceler</span><span class="arr">→</span>
+          <span class="step ok">Onay ✓</span><span class="muted small">veya</span><span class="step rev">Revizyon ↩ (sana döner)</span>
+        </div>
+      </div>
+
+      <div class="paths">
+        ${PATHS.map((p) => `
+        <div class="path" style="--pc:${p.color}" id="path-${p.k}">
+          <div class="path-head"><span class="num">${p.n}</span><div><div class="pt">${esc(p.title)}</div><div class="ptag">${esc(p.tag)}</div></div></div>
+          <div class="small">${esc(p.who)}</div>
+          <div class="steps">${p.steps.map((s, i) => `<span class="step">${i + 1}. ${esc(s)}</span>`).join('<span class="arr">→</span>')}<span class="arr">→</span><span class="step end">Müdür</span></div>
+          <div class="row between"><span class="small muted">⏱ ${esc(p.time)}</span>
+            ${p.act === 'link' ? `<a class="btn sm" href="${p.href}">${esc(p.cta)} ›</a>` : `<button class="btn sm ${p.n === 1 ? 'accent' : ''}" data-act="${p.act}">${esc(p.cta)} ${p.act === 'blank' ? '' : '›'}</button>`}
+          </div>
+        </div>`).join('')}
+      </div>
+
+      <div id="tpl-list">
+        <div class="section-title" id="tpl-anchor">Şablonlar <span class="muted" style="text-transform:none;font-weight:500">· "Başla" = 1. yol, "Kopyala & uyarla" = 2. yol</span></div>
+        ${cats.map((c) => `<div class="section-title small-title">${esc(c)}</div><div class="tpl-grid">${templates.filter((t) => (t.category || 'Diğer') === c).map((t) => `
+          <div class="tpl">
+            <div class="t"><span>${esc(t.name)}</span>${t.owner_id ? '<span class="chip neutral">Kişisel</span>' : ''}</div>
+            <div class="d">${esc(t.description)}</div>
+            <div class="small muted">${t.fields.filter((f) => f.type !== 'section').length} alan</div>
+            <div class="actions"><button class="btn sm accent" data-use="${t.id}">① Bu şablonla başla</button><a class="btn sm ghost copy-btn" href="#/sablonlar/${t.id}/kopya">② Kopyala &amp; uyarla</a></div>
+          </div>`).join('')}</div>`).join('')}
+      </div>
     `, 'yeni');
+
+    const startBlank = async (btn) => {
+      btn.disabled = true;
+      try {
+        const { report } = await api('POST', '/api/reports', { title: 'Yeni Rapor', fields: [{ key: 'icerik', label: 'Rapor İçeriği', type: 'textarea', required: true }] });
+        location.hash = `#/rapor/${report.id}/duzenle`;
+      } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+    };
+    $$('[data-act]').forEach((b) => {
+      b.onclick = () => {
+        const a = b.dataset.act;
+        if (a === 'blank') return startBlank(b);
+        $('#tpl-anchor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const list = $('#tpl-list');
+        list.classList.remove('hl-start', 'hl-copy');
+        void list.offsetWidth;
+        list.classList.add(a === 'scroll-copy' ? 'hl-copy' : 'hl-start');
+      };
+    });
     $$('[data-use]').forEach((b) => {
       b.onclick = async () => {
         b.disabled = true;
         try {
-          const body = b.dataset.use ? { template_id: Number(b.dataset.use) } : { title: 'Yeni Rapor', fields: [{ key: 'icerik', label: 'Rapor İçeriği', type: 'textarea', required: true }] };
-          const { report } = await api('POST', '/api/reports', body);
+          const { report } = await api('POST', '/api/reports', { template_id: Number(b.dataset.use) });
           location.hash = `#/rapor/${report.id}/duzenle`;
         } catch (e) { toast(e.message, 'err'); b.disabled = false; }
       };

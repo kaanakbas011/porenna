@@ -317,3 +317,28 @@ table.tbl th { font-size: 12px; text-transform: uppercase; color: var(--muted); 
   .report-view .kv .k { width: 200px; flex-shrink: 0; }
   a { text-decoration: none; }
 }
+
+/* ---------- "Nasıl başlamak istersin?" ---------- */
+.flow-card { overflow: hidden; }
+.flow { width: 100%; height: auto; display: none; }
+.common-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (min-width: 760px) { .flow { display: block; } .common-strip { display: none; } }
+.step { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; padding: 4px 9px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap; }
+.step.dark { background: var(--text); color: var(--bg); border-color: transparent; }
+.step.accent { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+.step.ok { background: var(--success); color: #fff; border-color: transparent; }
+.step.rev { background: var(--danger); color: #fff; border-color: transparent; }
+.arr { color: var(--muted); font-size: 13px; }
+.paths { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
+@media (min-width: 760px) { .paths { grid-template-columns: 1fr 1fr; } }
+.path { background: var(--surface); border: 1px solid var(--border); border-left: 5px solid var(--pc); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.path-head { display: flex; align-items: center; gap: 10px; }
+.path-head .num { width: 30px; height: 30px; border-radius: 50%; background: var(--pc); color: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.path-head .pt { font-weight: 700; line-height: 1.2; }
+.path-head .ptag { font-size: 12px; color: var(--pc); font-weight: 700; }
+.path .steps { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.path .steps .step { border-color: color-mix(in srgb, var(--pc) 45%, var(--border)); }
+.path .steps .step.end { background: var(--text); color: var(--bg); border-color: transparent; }
+.section-title.small-title { margin-top: 10px; font-size: 12px; }
+@keyframes hl { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30%, 70% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); } }
+#tpl-list.hl-start [data-use], #tpl-list.hl-copy .copy-btn { animation: hl 1.6s ease 2; }

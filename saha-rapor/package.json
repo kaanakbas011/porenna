@@ -1,0 +1,15 @@
+{
+  "name": "saha-rapor",
+  "version": "1.0.0",
+  "description": "Elektrik firmaları için iş bitirme / saha raporu uygulaması. Şablonlu raporlar, fotoğraf-video ekleri, müdür onay ekranı.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "MIT"
+}
